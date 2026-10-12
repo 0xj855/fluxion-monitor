@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import chain
 from .alerts import evaluate, message_zh
-from .analyze import analyze_pool, lp_concentration, orient
+from .analyze import analyze_pool, lp_concentration, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sync_events, sync_pools, sync_positions
 from .sources import eth_usd, wrapper_ratios, xstock_reference, xstocks_catalog
@@ -40,6 +40,64 @@ def token_meta(store, addrs):
     return meta
 
 
+def load_config():
+    """config.json + 私有覆盖（config/private.json 或环境变量 FLUXMON_PRIVATE_CONFIG）。
+
+    私有部分放 LP 标签、合同承诺金额等不宜进公开仓库的信息。"""
+    cfg = json.loads((ROOT / "config" / "config.json").read_text())
+    priv = ROOT / "config" / "private.json"
+    extra = json.loads(priv.read_text()) if priv.exists() else {}
+    if os.environ.get("FLUXMON_PRIVATE_CONFIG"):
+        extra = json.loads(os.environ["FLUXMON_PRIVATE_CONFIG"])
+    for k, v in extra.items():
+        cfg[k] = {**cfg.get(k, {}), **v} if isinstance(v, dict) and isinstance(cfg.get(k), dict) else v
+    return cfg
+
+
+def designated_summary(rows, cfg, labels, xcat):
+    """SOW 约定的指定交易对：合计 TVL、按 LP 地址汇总的资金、承诺资金方是否达标。"""
+    d = cfg.get("designated")
+    if not d:
+        return None
+    want = set(d["pairs"])
+    owners = {o.lower() for o in d.get("committed_owners", [])}
+    pools = [r for r in rows if r["base_addr"] in xcat and xcat[r["base_addr"]]["symbol"] in want and r["quote"] == "USDC"]
+    # 同一交易对若有多个 USDC 池（不同费率 / 包装币版本），全部计入
+    holders, per_pool = {}, []
+    for r in sorted(pools, key=lambda r: -(r["tvl_usd"] or 0)):
+        hs = (r.get("lp") or {}).get("holders", [])
+        committed = sum(h["usd"] for h in hs if h["owner"] in owners)
+        per_pool.append({"pool": r["pool"], "pair": r["pair"], "symbol": xcat[r["base_addr"]]["symbol"], "tvl_usd": r["tvl_usd"],
+                         "committed_usd": committed, "other_usd": sum(h["usd"] for h in hs) - committed,
+                         "other_lps": sum(1 for h in hs if h["owner"] not in owners)})
+        for h in hs:
+            agg = holders.setdefault(h["owner"], {"owner": h["owner"], "label": labels.get(h["owner"]), "usd": 0.0, "pools": 0, "positions": 0})
+            agg["usd"] += h["usd"]; agg["pools"] += 1; agg["positions"] += h["positions"]
+    tvl = sum(p["tvl_usd"] or 0 for p in per_pool)
+    hl = sorted(holders.values(), key=lambda h: -h["usd"])
+    for h in hl:
+        h["share_pct"] = h["usd"] / tvl * 100 if tvl else None
+    committed = sum(h["usd"] for h in hl if h["owner"] in owners)
+    covered = sorted({p["symbol"] for p in per_pool if p["committed_usd"] > 0})
+    return {"pairs": d["pairs"], "commitment_usd": d.get("commitment_usd"), "committed_owners": sorted(owners),
+            "committed_label": d.get("committed_label"), "tvl_usd": tvl, "committed_usd": committed,
+            "unattributed_usd": tvl - sum(h["usd"] for h in hl), "missing_pairs": sorted(want - set(covered)) if owners else [],
+            "holders": hl, "pools": per_pool}
+
+
+def designated_alerts(ds, cfg):
+    if not ds:
+        return []
+    out, who = [], ds.get("committed_label") or "committed LP"
+    if ds["commitment_usd"] and ds["committed_usd"] < ds["commitment_usd"]:
+        out.append(("designated:commitment", "critical", "commitment",
+                    {"name": who, "usd": ds["committed_usd"], "min": ds["commitment_usd"]}))
+    if ds["missing_pairs"]:
+        out.append(("designated:missing_pairs", "critical", "missing_pairs",
+                    {"name": who, "pairs": ds["missing_pairs"]}))
+    return out
+
+
 def notify(cfg, lines):
     hook = os.environ.get(cfg["lark_webhook_env"])
     if not hook or not lines:
@@ -52,7 +110,7 @@ def notify(cfg, lines):
 
 
 def run(args):
-    cfg = json.loads((ROOT / "config" / "config.json").read_text())
+    cfg = load_config()
     chain.RPC_URL = cfg["rpc_url"]
     store = Store(ROOT / "data" / "fluxmon.db")
     now = int(time.time())
@@ -141,12 +199,19 @@ def run(args):
             r["fee_apr_7d_pct"] = r["events_7d"].get("swap_usd", 0) / 7 * 365 * r["fee_pct"] / 100 / r["tvl_usd"] * 100
 
     # ---- LP 集中度
+    labels = {k.lower(): v for k, v in cfg.get("lp_labels", {}).items()}
     if not args.skip_positions:
         keys = {(by_pool[r["pool"]]["token0"], by_pool[r["pool"]]["token1"], by_pool[r["pool"]]["fee"]): r["pool"] for r in rows}
         sync_positions(store, cfg["npm"], keys)
         for r in rows:
             p = by_pool[r["pool"]]
-            r["lp"] = lp_concentration(store.positions(r["pool"]), r["tick"], orient(p, meta, cfg, xcat))
+            pos = store.positions(r["pool"])
+            r["lp"] = lp_concentration(pos, r["tick"], orient(p, meta, cfg, xcat))
+            if r.get("_val"):
+                r["lp"]["holders"] = lp_holders(pos, r["_val"], r["tvl_usd"], labels)
+
+    # ---- SOW 指定池子：TVL 与 LP 构成
+    designated = designated_summary(rows, cfg, labels, xcat)
 
     # ---- 告警（去重：仅新触发 / 恢复时推送）
     a = cfg["alerts"]
@@ -155,6 +220,8 @@ def run(args):
         prev = store.previous_snapshot(r["pool"], now, a["depth_drop_lookback_s"])
         for key, sev, code, params in evaluate(r, prev, cfg):
             fired[key] = (sev, message_zh(code, params), code, params)
+    for key, sev, code, params in designated_alerts(designated, cfg):
+        fired[key] = (sev, message_zh(code, params), code, params)
     active = store.active_alerts()
     new_lines, resolved_lines = [], []
     for key, (sev, msg, _, _) in fired.items():
@@ -165,9 +232,11 @@ def run(args):
         if key not in fired:
             store.resolve_alert(key, now)
             resolved_lines.append(f"[已恢复] {row[2]}")
+    for r in rows:
+        r.pop("_val", None)
     store.save_snapshot(now, head, rows)
 
-    report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows,
+    report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows, "designated": designated, "lp_labels": labels,
               "alerts": [{"key": k, "severity": s, "message": m, "code": c, "params": p} for k, (s, m, c, p) in fired.items()]}
     out_dir = ROOT / "data" / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,4 @@
 data/
 _site/
 __pycache__/
+config/private.json

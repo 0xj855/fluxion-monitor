@@ -44,6 +44,7 @@ def analyze_pool(pool, st, meta, usd, cfg, xst):
         "base_usd": (u0 if base_is0 else u1) if priced else None,
         "tvl_usd": (st["bal0"] / d0 * u0 + st["bal1"] / d1 * u1) if priced else None,
         "depth": {}, "impact": {},
+        "_val": {"sqrtP": st["sqrtP"], "u": [u0, u1], "d": [d0, d1]} if priced else None,   # 头寸估值用，写报告前删除
     }
     if not priced:
         return r
@@ -104,3 +105,30 @@ def lp_concentration(positions, tick, base_is0):
     return {"lps": len(by), "active_positions": len(act), "top1_pct": shares[0][0] * 100,
             "top3_pct": sum(s for s, _ in shares[:3]) * 100, "hhi": sum(s * s for s, _ in shares),
             "top_owner": shares[0][1], "big_ranges": big}
+
+
+def position_usd(p, val):
+    """单个 V3 头寸按当前价格折算的美元价值（不含未领取手续费）。"""
+    sa, sb, sp, L = 1.0001 ** (p["tickLower"] / 2), 1.0001 ** (p["tickUpper"] / 2), val["sqrtP"], p["L"]
+    if sp <= sa:
+        a0, a1 = L * (sb - sa) / (sa * sb), 0.0
+    elif sp >= sb:
+        a0, a1 = 0.0, L * (sb - sa)
+    else:
+        a0, a1 = L * (sb - sp) / (sp * sb), L * (sp - sa)
+    return a0 / val["d"][0] * val["u"][0] + a1 / val["d"][1] * val["u"][1]
+
+
+def lp_holders(positions, val, tvl, labels):
+    """按 LP 地址汇总该池全部头寸的美元价值。"""
+    by = {}
+    for p in positions:
+        if p["L"] <= 0:
+            continue
+        h = by.setdefault(p["owner"], {"owner": p["owner"], "label": labels.get(p["owner"]), "usd": 0.0, "positions": 0})
+        h["usd"] += position_usd(p, val)
+        h["positions"] += 1
+    out = sorted(by.values(), key=lambda h: -h["usd"])
+    for h in out:
+        h["share_pct"] = h["usd"] / tvl * 100 if tvl else None
+    return out

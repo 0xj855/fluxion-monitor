@@ -62,4 +62,8 @@ def message_zh(code, p):
         return f"{n} 占 {p['share']:.0f}% 的 LP 头寸距区间{'上沿' if p['side'] == 'upper' else '下沿'}仅 {p['edge']:.1f}%，价格穿出后深度将大幅下降"
     if code == "large_burn":
         return f"{n} 24h 内出现大额撤出 ${p['usd']:,.0f}（≥ TVL 的 {p['pct']}%）"
+    if code == "commitment":
+        return f"{n} 在 SOW 指定池子中的资金 ${p['usd']:,.0f}，低于合同约定的 ${p['min']:,.0f}"
+    if code == "missing_pairs":
+        return f"{n} 未在以下指定交易对提供流动性：{', '.join(p['pairs'])}"
     return f"{n} {code}"

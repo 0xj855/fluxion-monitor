@@ -15,22 +15,50 @@
     "0xcda86a272531e8640cd7f1a92c01839911b90bb0": "mETH"
   },
   "min_tvl_usd": 1000,
-  "depth_pcts": [0.5, 1, 2, 5, 10],
-  "impact_sizes_usd": [1000, 10000, 100000],
+  "depth_pcts": [
+    0.5,
+    1,
+    2,
+    5,
+    10
+  ],
+  "impact_sizes_usd": [
+    1000,
+    10000,
+    100000
+  ],
   "event_backfill_days": 7,
   "rfq_size_usdc": 1000,
-
   "alerts": {
-    "depth2_min_usd":        {"weth": 50000, "xstock": 2000},
-    "depth2_drop_pct":       30,
+    "depth2_min_usd": {
+      "weth": 50000,
+      "xstock": 2000
+    },
+    "depth2_drop_pct": 30,
     "depth_drop_lookback_s": 3600,
-    "tvl_drop_pct":          20,
-    "price_dev_pct":         {"weth": 1.0, "xstock": 1.5},
-    "xstock_ref_max_age_s":  900,
-    "top1_lp_share_pct":     50,
-    "range_edge_warn_pct":   3,
-    "large_burn_tvl_pct":    10
+    "tvl_drop_pct": 20,
+    "price_dev_pct": {
+      "weth": 1.0,
+      "xstock": 1.5
+    },
+    "xstock_ref_max_age_s": 900,
+    "top1_lp_share_pct": 50,
+    "range_edge_warn_pct": 3,
+    "large_burn_tvl_pct": 10
   },
-
-  "lark_webhook_env": "FLUXMON_LARK_WEBHOOK"
+  "lark_webhook_env": "FLUXMON_LARK_WEBHOOK",
+  "designated": {
+    "pairs": [
+      "TSLAx",
+      "NVDAx",
+      "CRCLx",
+      "MSTRx",
+      "SPYx",
+      "QQQx",
+      "GOOGLx",
+      "HOODx",
+      "METAx",
+      "AAPLx"
+    ]
+  }
 }

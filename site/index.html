@@ -59,6 +59,8 @@ h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
 .sev i{width:16px;height:16px;border-radius:50%;display:inline-grid;place-items:center;font-style:normal;font-size:11px;color:#fff;font-weight:700}
 .sev.critical i{background:var(--critical)} .sev.warn i{background:var(--warning);color:#0b0b0b} .sev.info i{background:var(--muted)}
 .alerts .msg{color:var(--ink);word-break:break-word}
+.ok{color:var(--good-text);font-weight:600}.bad{color:var(--critical);font-weight:600}
+.lbl{font-weight:600;margin-right:6px}
 .alerts .who{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .more{margin-top:8px}
 .btn{border:1px solid var(--ring);background:none;color:var(--ink-2);font:inherit;font-size:13px;padding:5px 10px;border-radius:7px;cursor:pointer}
@@ -147,6 +149,8 @@ footer code{font-size:11.5px}
     <ul class="alerts" id="alerts"></ul>
   </section>
 
+  <section class="card" id="lpmix"></section>
+
   <section class="card">
     <h2 data-i18n="poolsTitle">池子总览</h2>
     <p class="desc" data-i18n="poolsDesc"></p>
@@ -193,6 +197,10 @@ const I18N = {
     lpDesc: l => `在区间内 ${l.active_positions} 个头寸、${l.lps} 个 LP 地址；Top1 占 ${pct(l.top1_pct, 1)}，Top3 占 ${pct(l.top3_pct, 1)}，HHI ${l.hhi.toFixed(3)}。占比 ≥5% 的头寸：`,
     lpCols: b => ["LP 地址", "占在区间流动性", "区间", `${b} 再涨多少出区间`, `${b} 再跌多少出区间`], fullRange: "全区间", concentrated: "集中区间",
     locale: "zh-CN",
+    mixTitle: "10 个主要 xStocks 池 · LP 构成", mixDesc: "按当前价格折算每个 LP 头寸的价值（不含未领取手续费）。",
+    mixTvl: "10 池合计 TVL", mixLps: "LP 地址数", mixVsCommit: l => `${l} 资金 / 约定`, met: "达标", short: "不足",
+    mixCols: ["LP", "资金", "占 10 池 TVL", "覆盖池子", "头寸数"], mixOthers: n => `其余 ${n} 个地址`, mixUnattr: "未归属（未领取手续费等）",
+    mixPoolCols: l => ["池子", "TVL", l || "最大 LP", "其他 LP 资金", "其他 LP 数"], mixMissing: p => `未覆盖：${p.join("、")}`,
     group: {
       depth_min: n => `${n} 个池子 ±2% 深度低于阈值`, depth_drop: n => `${n} 个池子 ±2% 深度骤降`, tvl_drop: n => `${n} 个池子 TVL 骤降`,
       price_dev: n => `${n} 个池子价格偏离参考价`, lp_conc: n => `${n} 个池子由单一 LP 提供大部分流动性`,
@@ -206,6 +214,8 @@ const I18N = {
       lp_conc: p => `${p.name} 单一 LP 占在区间流动性 ${pct(p.share, 1)}（${short(p.owner)}），撤资即失去深度`,
       range_edge: p => `${p.name} 占 ${p.share.toFixed(0)}% 的 LP 头寸距区间${p.side === "upper" ? "上沿" : "下沿"}仅 ${pct(p.edge, 1)}，价格穿出后深度将大幅下降`,
       large_burn: p => `${p.name} 24h 内出现大额撤出 ${usd(p.usd)}（≥ TVL 的 ${p.pct}%）`,
+      commitment: p => `${p.name} 在 10 个指定池子中的资金 ${usd(p.usd)}，低于约定的 ${usd(p.min)}`,
+      missing_pairs: p => `${p.name} 未在以下指定交易对提供流动性：${p.pairs.join("、")}`,
     },
   },
   en: {
@@ -234,6 +244,10 @@ const I18N = {
     lpDesc: l => `${l.active_positions} in-range positions from ${l.lps} LP addresses; Top1 holds ${pct(l.top1_pct, 1)}, Top3 ${pct(l.top3_pct, 1)}, HHI ${l.hhi.toFixed(3)}. Positions with ≥5% share:`,
     lpCols: b => ["LP address", "Share of in-range liquidity", "Range", `${b} rise to exit range`, `${b} drop to exit range`], fullRange: "Full range", concentrated: "Concentrated",
     locale: "en-US",
+    mixTitle: "Top 10 xStocks pools · LP breakdown", mixDesc: "Each LP position valued at current prices (excluding uncollected fees).",
+    mixTvl: "10-pool TVL", mixLps: "LP addresses", mixVsCommit: l => `${l} capital / committed`, met: "Met", short: "Short",
+    mixCols: ["LP", "Capital", "Share of 10-pool TVL", "Pools", "Positions"], mixOthers: n => `${n} other addresses`, mixUnattr: "Unattributed (uncollected fees etc.)",
+    mixPoolCols: l => ["Pool", "TVL", l || "Top LP", "Other LPs' capital", "Other LPs"], mixMissing: p => `Not covered: ${p.join(", ")}`,
     group: {
       depth_min: n => `${n} pools have ±2% depth below threshold`, depth_drop: n => `${n} pools saw ±2% depth drop sharply`, tvl_drop: n => `${n} pools saw TVL drop sharply`,
       price_dev: n => `${n} pools deviate from reference price`, lp_conc: n => `${n} pools rely on a single LP for most liquidity`,
@@ -247,6 +261,8 @@ const I18N = {
       lp_conc: p => `${p.name} a single LP holds ${pct(p.share, 1)} of in-range liquidity (${short(p.owner)}); depth disappears if it withdraws`,
       range_edge: p => `${p.name} an LP position holding ${p.share.toFixed(0)}% is only ${pct(p.edge, 1)} from its ${p.side === "upper" ? "upper" : "lower"} bound; depth drops sharply once price exits`,
       large_burn: p => `${p.name} large withdrawal of ${usd(p.usd)} in the last 24h (≥ ${p.pct}% of TVL)`,
+      commitment: p => `${p.name} capital across the 10 designated pools is ${usd(p.usd)}, below the committed ${usd(p.min)}`,
+      missing_pairs: p => `${p.name} provides no liquidity in: ${p.pairs.join(", ")}`,
     },
   },
 };
@@ -310,7 +326,7 @@ function render() {
   $("#meta").replaceChildren(
     el("div", {}, T().updated, el("b", { text: ago(L.ts) }), age > 3600 ? el("span", { class: "stale", text: T().stale }) : ""),
     el("div", { text: T().block(L.block.toLocaleString(), L.eth_usd ? L.eth_usd.price.toFixed(2) : "–") }));
-  renderTiles(); renderAlerts(); renderTable(); renderDetail();
+  renderTiles(); renderAlerts(); renderLpMix(); renderTable(); renderDetail();
 }
 
 function renderTiles() {
@@ -351,6 +367,41 @@ function renderAlerts() {
     if (many) msg.append(el("span", { class: "who", text: list.map(x => x.params.name.replace(/ \(.*\)$/, "")).join(" · ") }));
     return el("li", {}, el("span", { class: "sev " + a.severity }, el("i", { text: icon[a.severity], "aria-hidden": "true" }), label[a.severity]), msg);
   }) : [el("li", {}, el("span", { class: "msg", text: T().noAlerts }))]));
+}
+
+const ownerCell = addr => { const td = el("td"); const lb = state.latest.lp_labels?.[addr];
+  if (lb) td.append(el("span", { class: "lbl", text: lb }));
+  td.append(el("a", { href: EXPLORER + addr, target: "_blank", rel: "noopener", text: short(addr) })); return td; };
+
+function renderLpMix() {
+  const box = $("#lpmix"), D = state.latest.designated;
+  if (!D || state.group === "weth") { box.hidden = true; return; }
+  box.hidden = false;
+  const lbl = D.committed_label;
+  const stats = [[T().mixTvl, usd(D.tvl_usd)], [T().mixLps, String(D.holders.length)]];
+  const mini = el("div", { class: "mini" }, ...stats.map(([k, v]) => el("div", {}, el("div", { class: "k", text: k }), el("div", { class: "v", text: v }))));
+  if (D.commitment_usd) {
+    const ok = D.committed_usd >= D.commitment_usd;
+    mini.prepend(el("div", {}, el("div", { class: "k", text: T().mixVsCommit(lbl || "LP") }),
+      el("div", { class: "v" }, `${usd(D.committed_usd)} / ${usd(D.commitment_usd)} `, el("span", { class: ok ? "ok" : "bad", text: (ok ? "✓ " : "! ") + (ok ? T().met : T().short) }))));
+  }
+  const top = D.holders.slice(0, 8), rest = D.holders.slice(8);
+  const ht = el("table"); ht.append(el("thead", {}, el("tr", {}, ...T().mixCols.map(t => el("th", { text: t })))));
+  const hb = el("tbody");
+  for (const h of top) hb.append(el("tr", {}, ownerCell(h.owner), el("td", { text: usd(h.usd) }), el("td", { text: pct(h.share_pct, 2) }), el("td", { text: String(h.pools) }), el("td", { text: String(h.positions) })));
+  if (rest.length) { const u = rest.reduce((a, h) => a + h.usd, 0);
+    hb.append(el("tr", {}, el("td", { text: T().mixOthers(rest.length) }), el("td", { text: usd(u) }), el("td", { text: pct(u / D.tvl_usd * 100, 2) }), el("td", { text: "–" }), el("td", { text: String(rest.reduce((a, h) => a + h.positions, 0)) }))); }
+  if (D.unattributed_usd > 1) hb.append(el("tr", {}, el("td", { text: T().mixUnattr }), el("td", { text: usd(D.unattributed_usd) }), el("td", { text: pct(D.unattributed_usd / D.tvl_usd * 100, 2) }), el("td", { text: "–" }), el("td", { text: "–" })));
+  ht.append(hb);
+  const pt = el("table"); pt.append(el("thead", {}, el("tr", {}, ...T().mixPoolCols(lbl).map(t => el("th", { text: t })))));
+  pt.append(el("tbody", {}, ...D.pools.map(p => {
+    const topUsd = lbl ? p.committed_usd : (state.latest.pools.find(x => x.pool === p.pool)?.lp?.holders?.[0]?.usd ?? null);
+    const other = lbl ? p.other_usd : (p.committed_usd + p.other_usd - (topUsd || 0));
+    return el("tr", {}, el("td", { class: "pair", text: p.pair }), el("td", { text: usd(p.tvl_usd) }), el("td", { text: usd(topUsd) }), el("td", { text: usd(other) }), el("td", { text: String(p.other_lps) }));
+  })));
+  box.replaceChildren(el("h2", { text: T().mixTitle }), el("p", { class: "desc", text: T().mixDesc }), mini,
+    el("div", { class: "grid2" }, el("div", { class: "tablewrap" }, ht), el("div", { class: "tablewrap" }, pt)));
+  if (D.missing_pairs?.length) box.append(el("p", { class: "desc bad", text: T().mixMissing(D.missing_pairs) }));
 }
 
 const COLS = [
@@ -586,9 +637,9 @@ function lpBlock(p) {
   const tbl = el("table");
   tbl.append(el("thead", {}, el("tr", {}, ...T().lpCols(p.base).map(t => el("th", { text: t })))));
   tbl.append(el("tbody", {}, ...lp.big_ranges.map(b => {
-    const a = el("a", { href: EXPLORER + b.owner, target: "_blank", rel: "noopener", text: short(b.owner) });
+    const own = ownerCell(b.owner);
     const edge = v => { const td = el("td", { text: v == null ? "∞" : pct(v, 1) }); if (v != null && v < 3) td.className = "neg"; return td; };
-    return el("tr", {}, el("td", {}, a), el("td", { text: pct(b.share_pct, 1) }), el("td", { text: (b.full_range || ((b.base_up_to_edge_pct ?? Infinity) > 500 && (b.base_down_to_edge_pct ?? 100) > 95)) ? T().fullRange : T().concentrated }),
+    return el("tr", {}, own, el("td", { text: pct(b.share_pct, 1) }), el("td", { text: (b.full_range || ((b.base_up_to_edge_pct ?? Infinity) > 500 && (b.base_down_to_edge_pct ?? 100) > 95)) ? T().fullRange : T().concentrated }),
       edge(b.base_up_to_edge_pct), edge(b.base_down_to_edge_pct));
   })));
   wrap.append(el("div", { class: "tablewrap" }, tbl));

@@ -1,0 +1,12 @@
+{
+  "lp_labels": {
+    "0x...": "LP 名称"
+  },
+  "designated": {
+    "commitment_usd": 1000000,
+    "committed_owners": [
+      "0x..."
+    ],
+    "committed_label": "LP 名称"
+  }
+}
