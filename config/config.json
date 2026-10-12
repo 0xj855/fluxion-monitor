@@ -1,0 +1,36 @@
+{
+  "rpc_url": "https://rpc.mantle.xyz",
+  "factory": "0xF883162Ed9c7E8EF604214c964c678E40c9B737C",
+  "factory_deploy_block": 87630777,
+  "npm": "0x2b70c4e7ca8e920435a5db191e066e9e3afd8db3",
+  "weth": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead1111",
+  "usdc": "0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9",
+  "stables": {
+    "0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9": "USDC",
+    "0x779ded0c9e1022225f8e0630b35a9b54be713736": "USDT0",
+    "0x201eba5cc46d216ce6dc03f6a759e8e766e956ae": "USDT",
+    "0x111111d2bf19e43c34263401e0cad979ed1cdb61": "USD1"
+  },
+  "extra_tokens": {
+    "0xcda86a272531e8640cd7f1a92c01839911b90bb0": "mETH"
+  },
+  "min_tvl_usd": 1000,
+  "depth_pcts": [0.5, 1, 2, 5, 10],
+  "impact_sizes_usd": [1000, 10000, 100000],
+  "event_backfill_days": 7,
+  "rfq_size_usdc": 1000,
+
+  "alerts": {
+    "depth2_min_usd":        {"weth": 50000, "xstock": 2000},
+    "depth2_drop_pct":       30,
+    "depth_drop_lookback_s": 3600,
+    "tvl_drop_pct":          20,
+    "price_dev_pct":         {"weth": 1.0, "xstock": 1.5},
+    "xstock_ref_max_age_s":  900,
+    "top1_lp_share_pct":     50,
+    "range_edge_warn_pct":   3,
+    "large_burn_tvl_pct":    10
+  },
+
+  "lark_webhook_env": "FLUXMON_LARK_WEBHOOK"
+}

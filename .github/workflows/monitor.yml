@@ -1,0 +1,64 @@
+name: monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"     # GitHub 的定时任务高峰期可能延迟几分钟
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # SQLite（事件、LP 持仓、告警状态）通过 Actions cache 在多次运行之间续接
+      - uses: actions/cache/restore@v4
+        with:
+          path: data/fluxmon.db
+          key: fluxmon-db-${{ github.run_id }}
+          restore-keys: fluxmon-db-
+
+      - name: Run monitor
+        env:
+          FLUXMON_LARK_WEBHOOK: ${{ secrets.FLUXMON_LARK_WEBHOOK }}
+          # 历史序列以线上看板为准，缓存丢失时从这里续接
+          FLUXMON_HISTORY_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/history.json
+        run: python -m fluxmon.main
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/fluxmon.db
+          key: fluxmon-db-${{ github.run_id }}
+
+      - name: Build site
+        run: |
+          mkdir -p _site/data
+          cp site/index.html _site/
+          cp data/reports/latest.json data/reports/history.json data/reports/latest.md _site/data/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
