@@ -64,6 +64,7 @@ xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deploym
 
 `.github/workflows/monitor.yml` 每 15 分钟在 GitHub Actions 上运行一次监控，并把 `site/index.html` 与最新数据发布到 GitHub Pages：
 
+- 看板支持中文 / English（右上角切换，或 `?lang=en`）。
 - 看板读取 `data/latest.json`（当前快照，含 ±30% 流动性分布、累积深度曲线、LP 头寸）和 `data/history.json`（30 天时间序列）。
 - SQLite 状态通过 Actions cache 续接；缓存丢失时用 `config/pools_seed.json` 跳过池子全量扫描，并从线上 `history.json` 续接历史。
 - 飞书推送：在仓库 Settings → Secrets → Actions 添加 `FLUXMON_LARK_WEBHOOK`（自定义机器人 webhook 地址）。

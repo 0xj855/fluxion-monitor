@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fluxion 流动性监控</title>
-<meta name="description" content="Mantle 上 Fluxion V3 AMM 中 xStocks 与 WETH 池子的流动性质量：深度、分布、滑点、价格偏离、LP 集中度。">
+<title>Fluxion Liquidity Monitor</title>
+<meta name="description" content="Liquidity quality of xStocks and WETH pools on Fluxion V3 AMM (Mantle): depth, distribution, price impact, price deviation, LP concentration.">
 <style>
 :root{
   color-scheme:light;
@@ -35,6 +35,7 @@ a{color:inherit}
 header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:20px}
 h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
 .sub{color:var(--ink-2);margin-top:2px}
+.head-r{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .meta{color:var(--muted);font-size:13px;text-align:right}
 .meta b{color:var(--ink-2);font-weight:550}
 .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
@@ -58,6 +59,7 @@ h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
 .sev i{width:16px;height:16px;border-radius:50%;display:inline-grid;place-items:center;font-style:normal;font-size:11px;color:#fff;font-weight:700}
 .sev.critical i{background:var(--critical)} .sev.warn i{background:var(--warning);color:#0b0b0b} .sev.info i{background:var(--muted)}
 .alerts .msg{color:var(--ink);word-break:break-word}
+.alerts .who{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .more{margin-top:8px}
 .btn{border:1px solid var(--ring);background:none;color:var(--ink-2);font:inherit;font-size:13px;padding:5px 10px;border-radius:7px;cursor:pointer}
 .btn:hover{background:var(--hover)}
@@ -111,57 +113,156 @@ footer code{font-size:11.5px}
 <div class="wrap">
   <header>
     <div>
-      <h1>Fluxion 流动性监控</h1>
-      <div class="sub">Mantle · Fluxion V3 AMM · xStocks 与 WETH 池</div>
+      <h1 data-i18n="title">Fluxion 流动性监控</h1>
+      <div class="sub" data-i18n="subtitle">Mantle · Fluxion V3 AMM · xStocks 与 WETH 池</div>
     </div>
-    <div class="meta" id="meta">加载中…</div>
+    <div class="head-r">
+      <div class="seg" id="f-lang" aria-label="Language">
+        <button data-v="zh" aria-pressed="false">中文</button>
+        <button data-v="en" aria-pressed="false">EN</button>
+      </div>
+      <div class="meta" id="meta">…</div>
+    </div>
   </header>
 
-  <div class="filters" role="toolbar" aria-label="筛选">
-    <span class="label">资产</span>
+  <div class="filters" role="toolbar" data-i18n-aria="filters" aria-label="Filters">
+    <span class="label" data-i18n="asset">资产</span>
     <div class="seg" id="f-group">
-      <button data-v="all" aria-pressed="true">全部</button>
+      <button data-v="all" aria-pressed="true" data-i18n="all">全部</button>
       <button data-v="weth" aria-pressed="false">WETH</button>
       <button data-v="xstock" aria-pressed="false">xStocks</button>
     </div>
-    <span class="label" style="margin-left:8px">历史区间</span>
+    <span class="label" style="margin-left:8px" data-i18n="range">历史区间</span>
     <div class="seg" id="f-range">
-      <button data-v="1" aria-pressed="false">24 小时</button>
-      <button data-v="7" aria-pressed="true">7 天</button>
-      <button data-v="30" aria-pressed="false">30 天</button>
+      <button data-v="1" aria-pressed="false" data-i18n="r24h">24 小时</button>
+      <button data-v="7" aria-pressed="true" data-i18n="r7d">7 天</button>
+      <button data-v="30" aria-pressed="false" data-i18n="r30d">30 天</button>
     </div>
   </div>
 
   <div class="tiles" id="tiles"></div>
 
   <section class="card">
-    <h2>当前告警</h2>
-    <p class="desc">按规则实时判定；同一告警只在新触发 / 恢复时推送。</p>
+    <h2 data-i18n="alertsTitle" style="margin-bottom:8px">当前告警</h2>
     <ul class="alerts" id="alerts"></ul>
-    <div class="more" id="alerts-more"></div>
   </section>
 
   <section class="card">
-    <h2>池子总览</h2>
-    <p class="desc">点击任一行查看该池的流动性分布、深度曲线与历史走势。±2% 深度为订单簿口径（价格移动 2% 需吃掉的储备价值）；交易冲击含手续费。</p>
+    <h2 data-i18n="poolsTitle">池子总览</h2>
+    <p class="desc" data-i18n="poolsDesc"></p>
     <div class="tablewrap"><table id="pools"><thead></thead><tbody></tbody></table></div>
   </section>
 
   <section class="card" id="detail"></section>
 
-  <footer>
-    数据源：Mantle 链上（Fluxion V3 Factory <code>0xF883…737C</code>、NonfungiblePositionManager <code>0x2b70…8db3</code>）、Fluxion RFQ / K 线（xStocks 参考价）、Binance / Coinbase（ETH 参考价）。
-    xStocks 在 AMM 中以 ERC-4626 包装币交易，偏离按 <code>convertToAssets</code> 换算后比较；美股休市时 RFQ/K 线参考价意义有限。
-    每 15 分钟更新一次。
-  </footer>
+  <footer data-i18n-html="footer"></footer>
 </div>
 
 <script>
 (() => {
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
-const state = { group: "all", range: 7, sel: null, sort: { key: "tvl", asc: false }, latest: null, history: null, showAllAlerts: false };
+const state = { group: "all", range: 7, sel: null, sort: { key: "tvl", asc: false }, latest: null, history: null };
 const EXPLORER = "https://mantlescan.xyz/address/";
+
+// ---------- i18n ----------
+const I18N = {
+  zh: {
+    title: "Fluxion 流动性监控", subtitle: "Mantle · Fluxion V3 AMM · xStocks 与 WETH 池", docTitle: "Fluxion 流动性监控",
+    filters: "筛选", asset: "资产", all: "全部", range: "历史区间", r24h: "24 小时", r7d: "7 天", r30d: "30 天",
+    alertsTitle: "当前告警", alertsDesc: "按规则实时判定；同一告警只在新触发 / 恢复时推送。",
+    poolsTitle: "池子总览", poolsDesc: "点击一行查看详情。±2% 深度取上下两侧较小值；冲击含手续费。",
+    footer: "数据源：Mantle 链上（Fluxion V3 Factory <code>0xF883…737C</code>、NonfungiblePositionManager <code>0x2b70…8db3</code>）、Fluxion RFQ / K 线（xStocks 参考价）、Binance / Coinbase（ETH 参考价）。xStocks 在 AMM 中以 ERC-4626 包装币交易，偏离按 <code>convertToAssets</code> 换算后比较；美股休市时 RFQ/K 线参考价意义有限。每 15 分钟更新一次。",
+    loadFail: "数据加载失败：", updated: "更新于 ", stale: "（数据已超过 1 小时未更新）",
+    block: (b, e) => `区块 ${b} · ETH 参考价 $${e}`,
+    agoS: n => n + " 秒前", agoM: n => n + " 分钟前", agoH: n => n + " 小时前", hourSuffix: "时",
+    tPools: "监控池子", tPoolsD: "TVL ≥ $1,000", tTvl: "总 TVL", tDepth: "±2% 深度合计", tDepthD: "取每池上下两侧较小值",
+    tBand: "±10% 内资金占比", tBandD: "全区间做市约 4.9%", tVol: "24h 成交", tVolD: v => "周转 " + v, tAlerts: "活跃告警", tAlertsD: "warn + critical",
+    sev: { critical: "严重", warn: "警告", info: "提示" }, noAlerts: "无 warn / critical 告警。", collapse: "收起", showAll: n => `显示全部 ${n} 条（含提示）`,
+    cD2: "±2% 深度", cPair: "池子", cTvl: "TVL", cD2u: "±2% 上", cD2d: "±2% 下", cBand: "±10% 内占比", cImp: "$10k 买入冲击", cVol: "24h 成交", cApr: "7d 费率 APR", cDev: "偏离参考价", cTop1: "Top1 LP",
+    insufficient: "流动性不足", staleRef: " (过期)", pickPool: "选择一个池子", feeTier: f => `费率 ${f}%`, poolContract: "池子合约 ",
+    mPrice: q => `价格（${q}）`, mDepth: "±2% 深度 上 / 下", mImp: s => `${s} 冲击 买 / 卖`,
+    distTitle: "流动性分布", distDesc: (q, b) => `现价 ±30% 内每 1% 价格区间的储备价值（AMM 版订单簿）。左侧为买盘（${q} 储备），右侧为卖盘（${b} 储备）。`,
+    bidsBelow: "买盘（价格下方）", asksAbove: "卖盘（价格上方）", bidRes: "买盘储备", askRes: "卖盘储备", binAria: (lo, hi, v) => `${lo}% 至 ${hi}%：${v}`,
+    spot: "现价", priceRange: "价格区间", reserveValue: "储备价值", viewTable: "查看数据表", noData: "暂无数据",
+    curveTitle: "累积深度曲线", curveDesc: "价格单向移动 x% 需要吃掉的累计储备价值；曲线越陡，现价附近越深。",
+    curveUp: "上涨方向（卖盘）", curveDown: "下跌方向（买盘）", curveX: v => `价格移动 ${v}%`,
+    histTitle: "历史走势", histDesc: d => `最近 ${d === 1 ? "24 小时" : d + " 天"}，每 15 分钟一个点。`, histWait: "历史数据积累中（至少需要两次快照）。", histFew: "该区间内数据不足。",
+    hDepth: "±2% 深度（较小一侧）", hTvl: "TVL", hVol: "24h 滚动成交额", hDev: "池价偏离参考价",
+    lpTitle: "LP 集中度", lpNone: "无持仓数据",
+    lpDesc: l => `在区间内 ${l.active_positions} 个头寸、${l.lps} 个 LP 地址；Top1 占 ${pct(l.top1_pct, 1)}，Top3 占 ${pct(l.top3_pct, 1)}，HHI ${l.hhi.toFixed(3)}。占比 ≥5% 的头寸：`,
+    lpCols: b => ["LP 地址", "占在区间流动性", "区间", `${b} 再涨多少出区间`, `${b} 再跌多少出区间`], fullRange: "全区间", concentrated: "集中区间",
+    locale: "zh-CN",
+    group: {
+      depth_min: n => `${n} 个池子 ±2% 深度低于阈值`, depth_drop: n => `${n} 个池子 ±2% 深度骤降`, tvl_drop: n => `${n} 个池子 TVL 骤降`,
+      price_dev: n => `${n} 个池子价格偏离参考价`, lp_conc: n => `${n} 个池子由单一 LP 提供大部分流动性`,
+      range_edge: n => `${n} 个集中头寸接近区间边界`, large_burn: n => `${n} 个池子出现大额撤出`,
+    },
+    alert: {
+      depth_min: p => `${p.name} ±2% 深度偏薄：上 ${usd(p.up)} / 下 ${usd(p.down)}（阈值 ${usd(p.min)}）`,
+      depth_drop: p => `${p.name} ${p.side === "up" ? "上方" : "下方"} ±2% 深度骤降 ${(p.drop * 100).toFixed(0)}%：${usd(p.before)} → ${usd(p.after)}`,
+      tvl_drop: p => `${p.name} TVL 下降 ${(p.drop * 100).toFixed(0)}%：${usd(p.before)} → ${usd(p.after)}`,
+      price_dev: p => `${p.name} 池价偏离参考价 ${pct(p.dev, 2, true)}（池 ${price(p.price)} vs 参考 ${price(p.ref)}，来源 ${p.source}）`,
+      lp_conc: p => `${p.name} 单一 LP 占在区间流动性 ${pct(p.share, 1)}（${short(p.owner)}），撤资即失去深度`,
+      range_edge: p => `${p.name} 占 ${p.share.toFixed(0)}% 的 LP 头寸距区间${p.side === "upper" ? "上沿" : "下沿"}仅 ${pct(p.edge, 1)}，价格穿出后深度将大幅下降`,
+      large_burn: p => `${p.name} 24h 内出现大额撤出 ${usd(p.usd)}（≥ TVL 的 ${p.pct}%）`,
+    },
+  },
+  en: {
+    title: "Fluxion Liquidity Monitor", subtitle: "Mantle · Fluxion V3 AMM · xStocks & WETH pools", docTitle: "Fluxion Liquidity Monitor",
+    filters: "Filters", asset: "Asset", all: "All", range: "History", r24h: "24h", r7d: "7d", r30d: "30d",
+    alertsTitle: "Active alerts", alertsDesc: "Evaluated by rule on every run; each alert is pushed only when it fires or resolves.",
+    poolsTitle: "Pools", poolsDesc: "Click a row for details. ±2% depth is the thinner side; impact includes fees.",
+    footer: "Sources: Mantle on-chain data (Fluxion V3 Factory <code>0xF883…737C</code>, NonfungiblePositionManager <code>0x2b70…8db3</code>), Fluxion RFQ / klines (xStocks reference price), Binance / Coinbase (ETH reference price). xStocks trade on the AMM as ERC-4626 wrappers; deviation is compared after <code>convertToAssets</code> conversion. Reference prices are less meaningful while US markets are closed. Updated every 15 minutes.",
+    loadFail: "Failed to load data: ", updated: "Updated ", stale: " (data is more than 1 hour old)",
+    block: (b, e) => `Block ${b} · ETH ref $${e}`,
+    agoS: n => n + "s ago", agoM: n => n + " min ago", agoH: n => n + "h ago", hourSuffix: "h",
+    tPools: "Pools monitored", tPoolsD: "TVL ≥ $1,000", tTvl: "Total TVL", tDepth: "±2% depth (sum)", tDepthD: "Thinner side of each pool",
+    tBand: "Capital within ±10%", tBandD: "Full-range ≈ 4.9%", tVol: "24h volume", tVolD: v => "Turnover " + v, tAlerts: "Active alerts", tAlertsD: "warn + critical",
+    sev: { critical: "Critical", warn: "Warning", info: "Info" }, noAlerts: "No warning or critical alerts.", collapse: "Show less", showAll: n => `Show all ${n} (incl. info)`,
+    cD2: "±2% depth", cPair: "Pool", cTvl: "TVL", cD2u: "±2% up", cD2d: "±2% down", cBand: "Within ±10%", cImp: "$10k buy impact", cVol: "24h volume", cApr: "7d fee APR", cDev: "Deviation vs ref", cTop1: "Top1 LP",
+    insufficient: "Insufficient", staleRef: " (stale)", pickPool: "Select a pool", feeTier: f => `Fee ${f}%`, poolContract: "Pool contract ",
+    mPrice: q => `Price (${q})`, mDepth: "±2% depth up / down", mImp: s => `${s} impact buy / sell`,
+    distTitle: "Liquidity distribution", distDesc: (q, b) => `Reserve value in each 1% price bin within ±30% of spot (the AMM's order book). Left: bids (${q} reserves); right: asks (${b} reserves).`,
+    bidsBelow: "Bids (below price)", asksAbove: "Asks (above price)", bidRes: "Bid reserves", askRes: "Ask reserves", binAria: (lo, hi, v) => `${lo}% to ${hi}%: ${v}`,
+    spot: "Spot", priceRange: "Price range", reserveValue: "Reserve value", viewTable: "View data table", noData: "No data",
+    curveTitle: "Cumulative depth", curveDesc: "Cumulative reserve value consumed to move price x% in one direction; a steeper curve means deeper liquidity near spot.",
+    curveUp: "Price up (asks)", curveDown: "Price down (bids)", curveX: v => `Price move ${v}%`,
+    histTitle: "History", histDesc: d => `Last ${d === 1 ? "24 hours" : d + " days"}, one point every 15 minutes.`, histWait: "Collecting history (needs at least two snapshots).", histFew: "Not enough data in this range.",
+    hDepth: "±2% depth (thinner side)", hTvl: "TVL", hVol: "Rolling 24h volume", hDev: "Pool price deviation vs ref",
+    lpTitle: "LP concentration", lpNone: "No position data",
+    lpDesc: l => `${l.active_positions} in-range positions from ${l.lps} LP addresses; Top1 holds ${pct(l.top1_pct, 1)}, Top3 ${pct(l.top3_pct, 1)}, HHI ${l.hhi.toFixed(3)}. Positions with ≥5% share:`,
+    lpCols: b => ["LP address", "Share of in-range liquidity", "Range", `${b} rise to exit range`, `${b} drop to exit range`], fullRange: "Full range", concentrated: "Concentrated",
+    locale: "en-US",
+    group: {
+      depth_min: n => `${n} pools have ±2% depth below threshold`, depth_drop: n => `${n} pools saw ±2% depth drop sharply`, tvl_drop: n => `${n} pools saw TVL drop sharply`,
+      price_dev: n => `${n} pools deviate from reference price`, lp_conc: n => `${n} pools rely on a single LP for most liquidity`,
+      range_edge: n => `${n} concentrated positions are near their range bound`, large_burn: n => `${n} pools had large withdrawals`,
+    },
+    alert: {
+      depth_min: p => `${p.name} ±2% depth is thin: up ${usd(p.up)} / down ${usd(p.down)} (threshold ${usd(p.min)})`,
+      depth_drop: p => `${p.name} ${p.side === "up" ? "upside" : "downside"} ±2% depth fell ${(p.drop * 100).toFixed(0)}%: ${usd(p.before)} → ${usd(p.after)}`,
+      tvl_drop: p => `${p.name} TVL fell ${(p.drop * 100).toFixed(0)}%: ${usd(p.before)} → ${usd(p.after)}`,
+      price_dev: p => `${p.name} pool price deviates ${pct(p.dev, 2, true)} from reference (pool ${price(p.price)} vs ref ${price(p.ref)}, source ${p.source})`,
+      lp_conc: p => `${p.name} a single LP holds ${pct(p.share, 1)} of in-range liquidity (${short(p.owner)}); depth disappears if it withdraws`,
+      range_edge: p => `${p.name} an LP position holding ${p.share.toFixed(0)}% is only ${pct(p.edge, 1)} from its ${p.side === "upper" ? "upper" : "lower"} bound; depth drops sharply once price exits`,
+      large_burn: p => `${p.name} large withdrawal of ${usd(p.usd)} in the last 24h (≥ ${p.pct}% of TVL)`,
+    },
+  },
+};
+const qsLang = new URLSearchParams(location.search).get("lang");
+let saved = null; try { saved = localStorage.getItem("fluxmon.lang"); } catch (e) {}
+let LANG = ["zh", "en"].includes(qsLang) ? qsLang : ["zh", "en"].includes(saved) ? saved : (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+const T = () => I18N[LANG];
+function applyStatic() {
+  document.documentElement.lang = LANG === "zh" ? "zh-CN" : "en";
+  document.title = T().docTitle;
+  for (const e of document.querySelectorAll("[data-i18n]")) e.textContent = T()[e.dataset.i18n];
+  for (const e of document.querySelectorAll("[data-i18n-html]")) e.innerHTML = T()[e.dataset.i18nHtml];   // 仅来自上方常量
+  for (const e of document.querySelectorAll("[data-i18n-aria]")) e.setAttribute("aria-label", T()[e.dataset.i18nAria]);
+  for (const b of document.querySelectorAll("#f-lang button")) b.setAttribute("aria-pressed", b.dataset.v === LANG);
+}
+const alertText = a => (a.code && T().alert[a.code] && a.params) ? T().alert[a.code](a.params) : a.message;
 
 // ---------- formatting ----------
 const usd = v => v == null || !isFinite(v) ? "–" : "$" + compact(v);
@@ -177,9 +278,9 @@ function compact(v) {
 const pct = (v, d = 2, sign = false) => v == null || !isFinite(v) ? "–" : (sign && v > 0 ? "+" : "") + v.toFixed(d) + "%";
 const price = v => v == null ? "–" : v >= 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v >= 1 ? v.toFixed(4) : v.toPrecision(4);
 const short = a => a ? a.slice(0, 6) + "…" + a.slice(-4) : "–";
-const ago = ts => { const s = Date.now() / 1000 - ts; return s < 90 ? Math.round(s) + " 秒前" : s < 5400 ? Math.round(s / 60) + " 分钟前" : Math.round(s / 3600) + " 小时前"; };
+const ago = ts => { const s = Date.now() / 1000 - ts; return s < 90 ? T().agoS(Math.round(s)) : s < 5400 ? T().agoM(Math.round(s / 60)) : T().agoH(Math.round(s / 3600)); };
 const tfmt = (ts, days) => { const d = new Date(ts * 1000); const p = n => String(n).padStart(2, "0");
-  return days <= 1 ? `${p(d.getHours())}:${p(d.getMinutes())}` : `${d.getMonth() + 1}/${d.getDate()}${days <= 7 ? " " + p(d.getHours()) + "时" : ""}`; };
+  return days <= 1 ? `${p(d.getHours())}:${p(d.getMinutes())}` : `${d.getMonth() + 1}/${d.getDate()}${days <= 7 ? " " + p(d.getHours()) + T().hourSuffix : ""}`; };
 const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) k === "class" ? e.className = v : k === "text" ? e.textContent = v : e.setAttribute(k, v);
   for (const k of kids) e.append(k); return e; };
@@ -197,7 +298,7 @@ async function load() {
     if (!state.sel || !l.pools.some(p => p.pool === state.sel)) state.sel = (l.pools.slice().sort((a, b) => (b.tvl_usd || 0) - (a.tvl_usd || 0))[0] || {}).pool;
     render();
   } catch (e) {
-    $("#meta").textContent = "数据加载失败：" + e.message;
+    $("#meta").textContent = T().loadFail + e.message;
   } finally { root.classList.remove("fade"); }
 }
 const visible = () => state.latest.pools.filter(p => state.group === "all" || p.group === state.group);
@@ -207,8 +308,8 @@ function render() {
   const L = state.latest;
   const age = Date.now() / 1000 - L.ts;
   $("#meta").replaceChildren(
-    el("div", {}, "更新于 ", el("b", { text: ago(L.ts) }), age > 3600 ? el("span", { class: "stale", text: "（数据已超过 1 小时未更新）" }) : ""),
-    el("div", { text: `区块 ${L.block.toLocaleString()} · ETH 参考价 $${L.eth_usd ? L.eth_usd.price.toFixed(2) : "–"}` }));
+    el("div", {}, T().updated, el("b", { text: ago(L.ts) }), age > 3600 ? el("span", { class: "stale", text: T().stale }) : ""),
+    el("div", { text: T().block(L.block.toLocaleString(), L.eth_usd ? L.eth_usd.price.toFixed(2) : "–") }));
   renderTiles(); renderAlerts(); renderTable(); renderDetail();
 }
 
@@ -217,17 +318,14 @@ function renderTiles() {
   const tvl = P.reduce((a, p) => a + (p.tvl_usd || 0), 0);
   const d2 = P.reduce((a, p) => a + Math.min(p.depth["2"]?.up || 0, p.depth["2"]?.down || 0), 0);
   const vol = P.reduce((a, p) => a + (p.events_24h?.swap_usd || 0), 0);
-  const inBand = tvl ? P.reduce((a, p) => a + (p.depth["10"] ? p.depth["10"].up + p.depth["10"].down : 0), 0) / tvl * 100 : null;
   const al = state.latest.alerts.filter(a => inGroup(a)).filter(a => a.severity !== "info").length;
   const tiles = [
-    ["监控池子", String(P.length), "TVL ≥ $1,000"],
-    ["总 TVL", usd(tvl), ""],
-    ["±2% 深度合计", usd(d2), "取每池上下两侧较小值"],
-    ["±10% 内资金占比", pct(inBand, 1), "全区间做市约 4.9%"],
-    ["24h 成交", usd(vol), tvl ? "周转 " + pct(vol / tvl * 100, 2) : ""],
-    ["活跃告警", String(al), "warn + critical"],
+    [T().tTvl, usd(tvl), ""],
+    [T().tDepth, usd(d2), ""],
+    [T().tVol, usd(vol), ""],
+    [T().tAlerts, String(al), ""],
   ];
-  $("#tiles").replaceChildren(...tiles.map(([k, v, d]) => el("div", { class: "tile" }, el("div", { class: "k", text: k }), el("div", { class: "v", text: v }), el("div", { class: "d", text: d }))));
+  $("#tiles").replaceChildren(...tiles.map(([k, v, d]) => el("div", { class: "tile" }, el("div", { class: "k", text: k }), el("div", { class: "v", text: v }), d ? el("div", { class: "d", text: d }) : "")));
 }
 function inGroup(a) {
   if (state.group === "all") return true;
@@ -238,39 +336,37 @@ function inGroup(a) {
 
 function renderAlerts() {
   const order = { critical: 0, warn: 1, info: 2 };
-  const all = state.latest.alerts.filter(inGroup).sort((a, b) => order[a.severity] - order[b.severity]);
-  const shown = state.showAllAlerts ? all : all.filter(a => a.severity !== "info").slice(0, 8);
-  const label = { critical: "严重", warn: "警告", info: "提示" }, icon = { critical: "!", warn: "!", info: "i" };
-  const ul = $("#alerts");
-  ul.replaceChildren(...(shown.length ? shown.map(a => el("li", {},
-      el("span", { class: "sev " + a.severity }, el("i", { text: icon[a.severity], "aria-hidden": "true" }), label[a.severity]),
-      el("span", { class: "msg", text: a.message }))) : [el("li", {}, el("span", { class: "msg", text: "无 warn / critical 告警。" }))]));
-  const rest = all.length - shown.length;
-  const more = $("#alerts-more"); more.replaceChildren();
-  if (rest > 0 || state.showAllAlerts) {
-    const b = el("button", { class: "btn", text: state.showAllAlerts ? "收起" : `显示全部 ${all.length} 条（含提示）` });
-    b.onclick = () => { state.showAllAlerts = !state.showAllAlerts; renderAlerts(); };
-    more.append(b);
+  // 同类告警合并为一行，下方列出涉及的池子
+  const groups = new Map();
+  for (const a of state.latest.alerts.filter(inGroup)) {
+    const k = a.severity + "|" + (a.code || a.key);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(a);
   }
+  const rows = [...groups.values()].sort((x, y) => order[x[0].severity] - order[y[0].severity]);
+  const label = T().sev, icon = { critical: "!", warn: "!", info: "i" };
+  $("#alerts").replaceChildren(...(rows.length ? rows.map(list => {
+    const a = list[0], many = list.length > 1 && a.code && T().group[a.code];
+    const msg = el("span", { class: "msg", text: many ? T().group[a.code](list.length) : alertText(a) });
+    if (many) msg.append(el("span", { class: "who", text: list.map(x => x.params.name.replace(/ \(.*\)$/, "")).join(" · ") }));
+    return el("li", {}, el("span", { class: "sev " + a.severity }, el("i", { text: icon[a.severity], "aria-hidden": "true" }), label[a.severity]), msg);
+  }) : [el("li", {}, el("span", { class: "msg", text: T().noAlerts }))]));
 }
 
 const COLS = [
-  { key: "pair", label: "池子", get: p => p.pair, cell: p => { const f = el("td"); f.append(el("span", { class: "pair", text: p.pair }), el("span", { class: "fee", text: p.fee_pct + "%" })); return f; } },
-  { key: "tvl", label: "TVL", get: p => p.tvl_usd, fmt: usd },
-  { key: "d2u", label: "±2% 上", get: p => p.depth["2"]?.up, fmt: usd },
-  { key: "d2d", label: "±2% 下", get: p => p.depth["2"]?.down, fmt: usd },
-  { key: "band", label: "±10% 内占比", get: p => p.in_band_10_pct, fmt: v => pct(v, 1) },
-  { key: "imp", label: "$10k 买入冲击", get: p => p.impact["10000"]?.buy, fmt: v => v == null ? "流动性不足" : pct(v) },
-  { key: "vol", label: "24h 成交", get: p => p.events_24h?.swap_usd || 0, fmt: usd },
-  { key: "apr", label: "7d 费率 APR", get: p => p.fee_apr_7d_pct, fmt: v => pct(v) },
-  { key: "dev", label: "偏离参考价", get: p => p.price_dev_pct ?? p.price_dev_pct_raw, fmt: (v, p) => v == null ? "–" : pct(v, 2, true) + (p.price_dev_pct == null ? " (过期)" : "") },
-  { key: "top1", label: "Top1 LP", get: p => p.lp?.top1_pct, fmt: v => pct(v, 1) },
+  { key: "pair", label: "cPair", get: p => p.pair, cell: p => { const f = el("td"); f.append(el("span", { class: "pair", text: p.pair }), el("span", { class: "fee", text: p.fee_pct + "%" })); return f; } },
+  { key: "tvl", label: "cTvl", get: p => p.tvl_usd, fmt: usd },
+  { key: "d2", label: "cD2", get: p => p.depth["2"] ? Math.min(p.depth["2"].up, p.depth["2"].down) : null, fmt: usd },
+  { key: "imp", label: "cImp", get: p => p.impact["10000"]?.buy, fmt: v => v == null ? T().insufficient : pct(v) },
+  { key: "vol", label: "cVol", get: p => p.events_24h?.swap_usd || 0, fmt: usd },
+  { key: "dev", label: "cDev", get: p => p.price_dev_pct ?? p.price_dev_pct_raw, fmt: (v, p) => v == null ? "–" : pct(v, 2, true) + (p.price_dev_pct == null ? T().staleRef : "") },
+  { key: "top1", label: "cTop1", get: p => p.lp?.top1_pct, fmt: v => pct(v, 1) },
 ];
 function renderTable() {
   const t = $("#pools");
   const hr = el("tr");
   for (const c of COLS) {
-    const th = el("th", { text: c.label, scope: "col", tabindex: "0" });
+    const th = el("th", { text: T()[c.label], scope: "col", tabindex: "0" });
     if (state.sort.key === c.key) th.className = "sorted" + (state.sort.asc ? " asc" : "");
     const act = () => { state.sort = { key: c.key, asc: state.sort.key === c.key ? !state.sort.asc : c.key === "pair" }; renderTable(); };
     th.onclick = act; th.onkeydown = e => { if (e.key === "Enter") act(); };
@@ -298,18 +394,16 @@ function renderTable() {
 function renderDetail() {
   const box = $("#detail");
   const p = state.latest.pools.find(x => x.pool === state.sel);
-  if (!p) { box.replaceChildren(el("div", { class: "empty", text: "选择一个池子" })); return; }
+  if (!p) { box.replaceChildren(el("div", { class: "empty", text: T().pickPool })); return; }
   const head = el("div", { class: "detail-head" },
-    el("h2", {}, p.pair, el("span", { class: "fee", text: `费率 ${p.fee_pct}%` })),
-    el("a", { href: EXPLORER + p.pool, target: "_blank", rel: "noopener", text: "池子合约 " + short(p.pool) + " ↗" }));
+    el("h2", {}, p.pair, el("span", { class: "fee", text: T().feeTier(p.fee_pct) })),
+    el("a", { href: EXPLORER + p.pool, target: "_blank", rel: "noopener", text: T().poolContract + short(p.pool) + " ↗" }));
   const imp = s => p.impact[s] ? `${pct(p.impact[s].buy)} / ${pct(p.impact[s].sell)}` : "–";
   const mini = el("div", { class: "mini" }, ...[
-    [`价格（${p.quote}）`, price(p.price)],
+    [T().mPrice(p.quote), price(p.price)],
     ["TVL", usd(p.tvl_usd)],
-    ["±2% 深度 上 / 下", `${usd(p.depth["2"]?.up)} / ${usd(p.depth["2"]?.down)}`],
-    ["$1k 冲击 买 / 卖", imp("1000")],
-    ["$10k 冲击 买 / 卖", imp("10000")],
-    ["$100k 冲击 买 / 卖", imp("100000")],
+    [T().mDepth, `${usd(p.depth["2"]?.up)} / ${usd(p.depth["2"]?.down)}`],
+    [T().mImp("$10k"), imp("10000")],
   ].map(([k, v]) => el("div", {}, el("div", { class: "k", text: k }), el("div", { class: "v", text: v }))));
 
   const distCard = el("div");
@@ -353,8 +447,8 @@ function showTip(tip, container, x, y, title, rows) {
 }
 
 function distChart(card, p) {
-  card.append(el("h2", { text: "流动性分布" }), el("p", { class: "desc", text: `现价 ±30% 内每 1% 价格区间的储备价值（AMM 版订单簿）。左侧为买盘（${p.quote} 储备），右侧为卖盘（${p.base} 储备）。` }));
-  card.append(el("div", { class: "legend" }, el("span", {}, el("i", { class: "sw", style: `background:${css("--s1")}` }), "买盘（价格下方）"), el("span", {}, el("i", { class: "sw", style: `background:${css("--s2")}` }), "卖盘（价格上方）")));
+  card.append(el("h2", { text: T().distTitle }), el("p", { class: "desc", text: T().distDesc(p.quote, p.base) }));
+  card.append(el("div", { class: "legend" }, el("span", {}, el("i", { class: "sw", style: `background:${css("--s1")}` }), T().bidsBelow), el("span", {}, el("i", { class: "sw", style: `background:${css("--s2")}` }), T().asksAbove)));
   const c = el("div", { class: "chart" }); card.append(c);
   const bins = [];
   for (let i = 30; i >= 1; i--) bins.push({ lo: -i, hi: -i + 1, v: p.curve.down[i] - p.curve.down[i - 1], side: "down" });
@@ -368,14 +462,14 @@ function distChart(card, p) {
     const h = (b.v / top) * (f.y0 - f.y1), x = f.x0 + i * bw + (bw - barW) / 2, y = f.y0 - h;
     const r = Math.min(4, barW / 2, h);
     const path = h > 0 ? `M${x},${f.y0}V${y + r}Q${x},${y} ${x + r},${y}H${x + barW - r}Q${x + barW},${y} ${x + barW},${y + r}V${f.y0}Z` : "";
-    const g = s("g", { tabindex: "0", "aria-label": `${b.lo}% 至 ${b.hi}%：$${compact(b.v)}` });
+    const g = s("g", { tabindex: "0", "aria-label": T().binAria(b.lo, b.hi, "$" + compact(b.v)) });
     if (path) g.append(s("path", { d: path, fill: css(b.side === "up" ? "--s2" : "--s1") }));
     const hit = s("rect", { x: f.x0 + i * bw, y: f.y1, width: bw, height: f.y0 - f.y1, fill: "transparent" });
     g.append(hit);
     const on = e => { const rc = c.getBoundingClientRect(); const px = (e.clientX ?? (rc.left + x)) - rc.left;
       g.firstChild.setAttribute?.("opacity", path ? .8 : 1);
       showTip(tip, c, px, 10, `${b.lo > 0 ? "+" : ""}${b.lo}% ～ ${b.hi > 0 ? "+" : ""}${b.hi}%（${price(p.price * (1 + b.lo / 100))} – ${price(p.price * (1 + b.hi / 100))}）`,
-        [[css(b.side === "up" ? "--s2" : "--s1"), "$" + compact(b.v), b.side === "up" ? "卖盘储备" : "买盘储备"]]); };
+        [[css(b.side === "up" ? "--s2" : "--s1"), "$" + compact(b.v), b.side === "up" ? T().askRes : T().bidRes]]); };
     const off = () => { tip.style.opacity = 0; if (path) g.firstChild.setAttribute("opacity", 1); };
     g.addEventListener("pointermove", on); g.addEventListener("focus", on); g.addEventListener("pointerleave", off); g.addEventListener("blur", off);
     f.svg.append(g);
@@ -384,19 +478,19 @@ function distChart(card, p) {
   f.svg.append(s("line", { x1: mid, x2: mid, y1: f.y1 - 4, y2: f.y0, stroke: css("--ink-2"), "stroke-width": 1 }));
   for (const [v, anchor] of [[-30, "start"], [-10, "middle"], [0, "middle"], [10, "middle"], [30, "end"]]) {
     const x = f.x0 + (v + 30) * bw; const t = s("text", { x, y: f.h - 6, "text-anchor": anchor, "font-size": 11, fill: css("--muted") });
-    t.textContent = v === 0 ? "现价" : (v > 0 ? "+" : "") + v + "%"; f.svg.append(t);
+    t.textContent = v === 0 ? T().spot : (v > 0 ? "+" : "") + v + "%"; f.svg.append(t);
   }
   c.prepend(f.svg);
-  const tbl = el("table"); tbl.append(el("thead", {}, el("tr", {}, el("th", { text: "价格区间" }), el("th", { text: "储备价值" }))));
+  const tbl = el("table"); tbl.append(el("thead", {}, el("tr", {}, el("th", { text: T().priceRange }), el("th", { text: T().reserveValue }))));
   tbl.append(el("tbody", {}, ...bins.filter(b => b.v > 0.5).map(b => el("tr", {}, el("td", { text: `${b.lo}% ～ ${b.hi}%` }), el("td", { text: "$" + compact(b.v) })))));
-  card.append(el("details", {}, el("summary", { text: "查看数据表" }), el("div", { class: "tablewrap" }, tbl)));
+  card.append(el("details", {}, el("summary", { text: T().viewTable }), el("div", { class: "tablewrap" }, tbl)));
 }
 
 function lineChart(c, series, xs, opts) {
   const f = frame(c, opts.h || 200, { l: 52, r: opts.endLabels ? 64 : 12, t: 10, b: 24 });
   const vals = series.flatMap(sr => sr.ys).filter(v => v != null && isFinite(v));
   let lo = opts.zero ? 0 : Math.min(...vals), hi = Math.max(...vals);
-  if (!vals.length) { c.replaceChildren(el("div", { class: "empty", text: "暂无数据" })); return; }
+  if (!vals.length) { c.replaceChildren(el("div", { class: "empty", text: T().noData })); return; }
   let ticks, top, bottom;
   if (opts.zero) { ticks = niceTicks(hi); top = ticks[ticks.length - 1]; bottom = 0; }
   else { const span = (hi - lo) || Math.abs(hi) * .1 || 1; bottom = lo - span * .15; top = hi + span * .15; ticks = [0, 1, 2, 3].map(i => bottom + (top - bottom) * i / 3); }
@@ -448,34 +542,32 @@ function lineChart(c, series, xs, opts) {
 }
 
 function curveChart(card, p) {
-  card.append(el("h2", { text: "累积深度曲线" }), el("p", { class: "desc", text: "价格单向移动 x% 需要吃掉的累计储备价值；曲线越陡，现价附近越深。" }));
-  const sr = [{ name: "上涨方向（卖盘）", color: css("--s2"), ys: p.curve.up }, { name: "下跌方向（买盘）", color: css("--s1"), ys: p.curve.down }];
+  card.append(el("h2", { text: T().curveTitle }), el("p", { class: "desc", text: T().curveDesc }));
+  const sr = [{ name: T().curveUp, color: css("--s2"), ys: p.curve.up }, { name: T().curveDown, color: css("--s1"), ys: p.curve.down }];
   card.append(el("div", { class: "legend" }, ...sr.map(x => el("span", {}, el("i", { class: "ln", style: `background:${x.color}` }), x.name))));
   const c = el("div", { class: "chart" }); card.append(c);
   const xs = p.curve.up.map((_, i) => i);
   lineChart(c, sr, xs, { h: 240, zero: true, endLabels: true, yfmt: v => "$" + compact(v),
-    xticks: () => [0, 5, 10, 15, 20, 25, 30].map(v => ({ v, label: v + "%" })), xlabel: v => `价格移动 ${v}%` });
+    xticks: () => [0, 5, 10, 15, 20, 25, 30].map(v => ({ v, label: v + "%" })), xlabel: v => T().curveX(v) });
 }
 
 function historyBlock(p) {
   const wrap = el("div");
-  wrap.append(el("h2", { text: "历史走势" }), el("p", { class: "desc", text: `最近 ${state.range === 1 ? "24 小时" : state.range + " 天"}，每 15 分钟一个点。` }));
+  wrap.append(el("h2", { text: T().histTitle }), el("p", { class: "desc", text: T().histDesc(state.range) }));
   const H = state.history?.pools?.[p.pool];
-  if (!H || H.rows.length < 2) { wrap.append(el("div", { class: "empty", text: "历史数据积累中（至少需要两次快照）。" })); return wrap; }
+  if (!H || H.rows.length < 2) { wrap.append(el("div", { class: "empty", text: T().histWait })); return wrap; }
   const F = state.history.fields; const ix = k => F.indexOf(k);
   const cut = Date.now() / 1000 - state.range * 86400;
   const rows = H.rows.filter(r => r[0] >= cut);
-  if (rows.length < 2) { wrap.append(el("div", { class: "empty", text: "该区间内数据不足。" })); return wrap; }
+  if (rows.length < 2) { wrap.append(el("div", { class: "empty", text: T().histFew })); return wrap; }
   const xs = rows.map(r => r[0]);
-  const xticks = xsv => { const n = 4, out = []; for (let i = 0; i < n; i++) { const v = xsv[0] + (xsv[xsv.length - 1] - xsv[0]) * i / (n - 1); out.push({ v, label: tfmt(v, state.range) }); } return out; };
-  const xlabel = v => new Date(v * 1000).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const xticks = xsv => { const n = 4, out = []; for (let i = 0; i < n; i++) { const v = xsv[0] + (xsv[xsv.length - 1] - xsv[0]) * i / (n - 1); const label = tfmt(v, state.range); if (!out.length || out[out.length - 1].label !== label) out.push({ v, label }); } return out; };
+  const xlabel = v => new Date(v * 1000).toLocaleString(T().locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const charts = [
-    { t: "±2% 深度（较小一侧）", ys: rows.map(r => r[ix("depth2_up")] == null ? null : Math.min(r[ix("depth2_up")], r[ix("depth2_down")])), fmt: v => "$" + compact(v), zero: true },
-    { t: "TVL", ys: rows.map(r => r[ix("tvl_usd")]), fmt: v => "$" + compact(v), zero: true },
-    { t: "24h 滚动成交额", ys: rows.map(r => r[ix("vol_24h_usd")]), fmt: v => "$" + compact(v), zero: true },
-    { t: "池价偏离参考价", ys: rows.map(r => r[ix("price_dev_pct")]), fmt: v => v == null ? "–" : (v > 0 ? "+" : "") + v.toFixed(2) + "%", zero: false },
+    { t: T().hDepth, ys: rows.map(r => r[ix("depth2_up")] == null ? null : Math.min(r[ix("depth2_up")], r[ix("depth2_down")])), fmt: v => "$" + compact(v), zero: true },
+    { t: T().hTvl, ys: rows.map(r => r[ix("tvl_usd")]), fmt: v => "$" + compact(v), zero: true },
   ];
-  const grid = el("div", { class: "grid4" });
+  const grid = el("div", { class: "grid2" });
   for (const ch of charts) {
     const box = el("div"); box.append(el("div", { class: "legend", style: "font-weight:600;color:var(--ink)" }, ch.t));
     const c = el("div", { class: "chart" }); box.append(c); grid.append(box);
@@ -487,16 +579,16 @@ function historyBlock(p) {
 
 function lpBlock(p) {
   const wrap = el("div", { style: "margin-top:20px" });
-  wrap.append(el("h2", { text: "LP 集中度" }));
+  wrap.append(el("h2", { text: T().lpTitle }));
   const lp = p.lp;
-  if (!lp) { wrap.append(el("div", { class: "empty", text: "无持仓数据" })); return wrap; }
-  wrap.append(el("p", { class: "desc", text: `在区间内 ${lp.active_positions} 个头寸、${lp.lps} 个 LP 地址；Top1 占 ${pct(lp.top1_pct, 1)}，Top3 占 ${pct(lp.top3_pct, 1)}，HHI ${lp.hhi.toFixed(3)}。占比 ≥5% 的头寸：` }));
+  if (!lp) { wrap.append(el("div", { class: "empty", text: T().lpNone })); return wrap; }
+  wrap.append(el("p", { class: "desc", text: T().lpDesc(lp) }));
   const tbl = el("table");
-  tbl.append(el("thead", {}, el("tr", {}, ...["LP 地址", "占在区间流动性", "区间", `${p.base} 再涨多少出区间`, `${p.base} 再跌多少出区间`].map(t => el("th", { text: t })))));
+  tbl.append(el("thead", {}, el("tr", {}, ...T().lpCols(p.base).map(t => el("th", { text: t })))));
   tbl.append(el("tbody", {}, ...lp.big_ranges.map(b => {
     const a = el("a", { href: EXPLORER + b.owner, target: "_blank", rel: "noopener", text: short(b.owner) });
     const edge = v => { const td = el("td", { text: v == null ? "∞" : pct(v, 1) }); if (v != null && v < 3) td.className = "neg"; return td; };
-    return el("tr", {}, el("td", {}, a), el("td", { text: pct(b.share_pct, 1) }), el("td", { text: b.full_range ? "全区间" : "集中区间" }),
+    return el("tr", {}, el("td", {}, a), el("td", { text: pct(b.share_pct, 1) }), el("td", { text: (b.full_range || ((b.base_up_to_edge_pct ?? Infinity) > 500 && (b.base_down_to_edge_pct ?? 100) > 95)) ? T().fullRange : T().concentrated }),
       edge(b.base_up_to_edge_pct), edge(b.base_down_to_edge_pct));
   })));
   wrap.append(el("div", { class: "tablewrap" }, tbl));
@@ -510,6 +602,10 @@ function seg(id, key, cast) {
     state[key] = cast(b.dataset.v); render(); });
 }
 seg("#f-group", "group", String); seg("#f-range", "range", Number);
+$("#f-lang").addEventListener("click", e => { const b = e.target.closest("button"); if (!b || b.dataset.v === LANG) return;
+  LANG = b.dataset.v; try { localStorage.setItem("fluxmon.lang", LANG); } catch (err) {}
+  applyStatic(); if (state.latest) render(); });
+applyStatic();
 let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => state.latest && renderDetail(), 150); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.latest && renderDetail());
 load(); setInterval(load, 5 * 60 * 1000);

@@ -7,7 +7,7 @@ import urllib.request
 from pathlib import Path
 
 from . import chain
-from .alerts import evaluate
+from .alerts import evaluate, message_zh
 from .analyze import analyze_pool, lp_concentration, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sync_events, sync_pools, sync_positions
@@ -153,11 +153,11 @@ def run(args):
     fired = {}
     for r in rows:
         prev = store.previous_snapshot(r["pool"], now, a["depth_drop_lookback_s"])
-        for key, sev, msg in evaluate(r, prev, cfg):
-            fired[key] = (sev, msg)
+        for key, sev, code, params in evaluate(r, prev, cfg):
+            fired[key] = (sev, message_zh(code, params), code, params)
     active = store.active_alerts()
     new_lines, resolved_lines = [], []
-    for key, (sev, msg) in fired.items():
+    for key, (sev, msg, _, _) in fired.items():
         if key not in active:
             new_lines.append(f"[{sev.upper()}] {msg}")
         store.set_alert(key, sev, msg, now)
@@ -168,7 +168,7 @@ def run(args):
     store.save_snapshot(now, head, rows)
 
     report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows,
-              "alerts": [{"key": k, "severity": s, "message": m} for k, (s, m) in fired.items()]}
+              "alerts": [{"key": k, "severity": s, "message": m, "code": c, "params": p} for k, (s, m, c, p) in fired.items()]}
     out_dir = ROOT / "data" / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "latest.json").write_text(json.dumps(clean(report), indent=1, ensure_ascii=False))
