@@ -8,9 +8,10 @@ from pathlib import Path
 
 from . import chain
 from .alerts import evaluate, message_zh
-from .analyze import analyze_pool, lp_concentration, lp_holders, orient
+from . import lb
+from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
-from .discover import sync_events, sync_pools, sync_positions
+from .discover import sweep_pools, sync_events, sync_pools, sync_positions
 from .sources import eth_usd, wrapper_ratios, xstock_reference, xstocks_catalog
 from .store import Store
 from .v3 import read_pool
@@ -61,7 +62,8 @@ def designated_summary(rows, cfg, labels, xcat):
         return None
     want = set(d["pairs"])
     owners = {o.lower() for o in d.get("committed_owners", [])}
-    pools = [r for r in rows if r["base_addr"] in xcat and xcat[r["base_addr"]]["symbol"] in want and r["quote"] == "USDC"]
+    pools = [r for r in rows if r["dex"] == d.get("dex", "fluxion") and r["base_addr"] in xcat
+             and xcat[r["base_addr"]]["symbol"] in want and r["quote"] == "USDC"]
     # 同一交易对若有多个 USDC 池（不同费率 / 包装币版本），全部计入
     holders, per_pool = {}, []
     for r in sorted(pools, key=lambda r: -(r["tvl_usd"] or 0)):
@@ -102,7 +104,7 @@ def notify(cfg, lines):
     hook = os.environ.get(cfg["lark_webhook_env"])
     if not hook or not lines:
         return
-    body = json.dumps({"msg_type": "text", "content": {"text": "【Fluxion 流动性监控】\n" + "\n".join(lines)}}).encode()
+    body = json.dumps({"msg_type": "text", "content": {"text": "【Mantle DEX 流动性监控】\n" + "\n".join(lines)}}).encode()
     try:
         urllib.request.urlopen(urllib.request.Request(hook, body, {"content-type": "application/json"}), timeout=15)
     except Exception as e:
@@ -123,21 +125,33 @@ def run(args):
             print("history import skipped:", e)
     head = chain.block_number()
 
+    xcat = xstocks_catalog()
+    weth = cfg["weth"]
+    dexes = {d["id"]: d for d in cfg["dexes"]}
     seed = ROOT / "config" / "pools_seed.json"
-    if store.get("pools_synced_block") is None and seed.exists():   # 全新环境：用种子清单跳过从部署区块开始的全量扫描
+    if store.get("pools_synced_block") is None and seed.exists():   # 全新环境：用种子清单跳过 Fluxion 从部署区块开始的全量扫描
         sd = json.loads(seed.read_text())
         store.add_pools(sd["pools"])
         store.put("pools_synced_block", sd["synced_block"])
-    sync_pools(store, cfg, head)
-    xcat = xstocks_catalog()
-    weth = cfg["weth"]
-    # 只看两侧都是可信资产（稳定币 / WETH / xStocks / 配置白名单）的池子，排除测试币池
+    for d in dexes.values():
+        if d["type"] == "lb":
+            lb.sync_pairs(store, d)
+        elif d["discovery"] == "events":
+            sync_pools(store, d, head)
+        else:
+            quotes = sorted(set(cfg["stables"]) | {weth} | {a.lower() for a in d.get("quotes", [])})
+            sweep_pools(store, d, sorted(xcat), quotes, now)
+    # 只看两侧都是可信资产（稳定币 / WETH / xStocks / 配置白名单）的池子，排除测试币池；每个 DEX 只看它配置的资产类别
     trusted = set(cfg["stables"]) | {weth} | set(xcat) | {a.lower() for a in cfg.get("extra_tokens", {})}
-    pools = [p for p in store.pools()
-             if (weth in (p["token0"], p["token1"]) or p["token0"] in xcat or p["token1"] in xcat)
-             and p["token0"] in trusted and p["token1"] in trusted]
+
+    def wanted(p):
+        assets = dexes.get(p["dex"], {}).get("assets", [])
+        hit = ("xstock" in assets and (p["token0"] in xcat or p["token1"] in xcat)) or \
+              ("weth" in assets and weth in (p["token0"], p["token1"]))
+        return hit and p["token0"] in trusted and p["token1"] in trusted
+    pools = [p for p in store.pools() if p["dex"] in dexes and wanted(p)]
     meta = token_meta(store, sorted({t for p in pools for t in (p["token0"], p["token1"])}))
-    states = {p["pool"]: read_pool(p) for p in pools}
+    states = {p["pool"]: (lb.read_pair(p) if p["kind"] == "lb" else read_pool(p)) for p in pools}
 
     # ---- 美元定价：稳定币=1，WETH=CEX，其余代币用与稳定币/WETH 配对、储备最大的池子推导
     usd = {a: 1.0 for a in cfg["stables"]}
@@ -154,6 +168,8 @@ def run(args):
 
     rows = [analyze_pool(p, states[p["pool"]], meta, usd, cfg, xcat) for p in pools]
     rows = [r for r in rows if (r["tvl_usd"] or 0) >= cfg["min_tvl_usd"]]
+    for r in rows:
+        r["dex_name"] = dexes[r["dex"]]["name"]
     by_pool = {p["pool"]: p for p in pools}
 
     # ---- 参考价与偏离
@@ -164,10 +180,13 @@ def run(args):
                 r.update(ref_price=eth["price"], ref_source="cex", price_dev_pct=(r["price"] / eth["price"] - 1) * 100)
     xrows = [r for r in rows if r["base_addr"] in xcat and stable_quoted(r)]
     ratios = wrapper_ratios([r["base_addr"] for r in xrows if xcat[r["base_addr"]]["kind"] == "wrapper"])
+    refs = {}
     for r in xrows:
         info = xcat[r["base_addr"]]
-        ref = xstock_reference(info["symbol"], info["native"], cfg["usdc"], cfg["rfq_size_usdc"])
-        time.sleep(1.1)   # RFQ 限速 60 次/分钟
+        if info["symbol"] not in refs:   # 同一个 xStock 在多个 DEX 上只查一次
+            refs[info["symbol"]] = xstock_reference(info["symbol"], info["native"], cfg["usdc"], cfg["rfq_size_usdc"])
+            time.sleep(1.1)   # RFQ 限速 60 次/分钟
+        ref = refs[info["symbol"]]
         ratio = ratios.get(r["base_addr"]) or 1.0
         r["xstock"] = {**ref, "wrapper_ratio": ratio}
         fresh = ref["source"] == "rfq" or (ref["kline_age_s"] is not None and ref["kline_age_s"] <= cfg["alerts"]["xstock_ref_max_age_s"])
@@ -201,14 +220,32 @@ def run(args):
     # ---- LP 集中度
     labels = {k.lower(): v for k, v in cfg.get("lp_labels", {}).items()}
     if not args.skip_positions:
-        keys = {(by_pool[r["pool"]]["token0"], by_pool[r["pool"]]["token1"], by_pool[r["pool"]]["fee"]): r["pool"] for r in rows}
-        sync_positions(store, cfg["npm"], keys)
-        for r in rows:
-            p = by_pool[r["pool"]]
-            pos = store.positions(r["pool"])
-            r["lp"] = lp_concentration(pos, r["tick"], orient(p, meta, cfg, xcat))
-            if r.get("_val"):
-                r["lp"]["holders"] = lp_holders(pos, r["_val"], r["tvl_usd"], labels)
+        for d in dexes.values():
+            drows = [r for r in rows if r["dex"] == d["id"]]
+            if not drows:
+                continue
+            if d["type"] == "lb":
+                for r in drows:
+                    p = by_pool[r["pool"]]
+                    created = store.get(f"lb_created:{p['pool']}") or lb.first_block(p["pool"], head)
+                    store.put(f"lb_created:{p['pool']}", created)
+                    v = r.get("_val")
+                    hs = [{"owner": o, "label": labels.get(o), "positions": 1,
+                           "usd": x / v["d"][0] * v["u"][0] + y / v["d"][1] * v["u"][1]}
+                          for o, (x, y) in lb.holders(store, p, states[p["pool"]], head, created - 1).items()] if v else []
+                    hs.sort(key=lambda h: -h["usd"])
+                    for h in hs:
+                        h["share_pct"] = h["usd"] / r["tvl_usd"] * 100 if r["tvl_usd"] else None
+                    r["lp"] = lp_from_holders(hs)
+            elif d.get("npm") and d["discovery"] == "events":   # NPM 全量扫描只适合持仓 NFT 不多的 DEX
+                keys = {(by_pool[r["pool"]]["token0"], by_pool[r["pool"]]["token1"], by_pool[r["pool"]]["fee"]): r["pool"] for r in drows}
+                sync_positions(store, d["npm"], keys)
+                for r in drows:
+                    p = by_pool[r["pool"]]
+                    pos = store.positions(r["pool"])
+                    r["lp"] = lp_concentration(pos, r["tick"], orient(p, meta, cfg, xcat))
+                    if r.get("_val"):
+                        r["lp"]["holders"] = lp_holders(pos, r["_val"], r["tvl_usd"], labels)
 
     # ---- SOW 指定池子：TVL 与 LP 构成
     designated = designated_summary(rows, cfg, labels, xcat)
@@ -237,6 +274,9 @@ def run(args):
     store.save_snapshot(now, head, rows)
 
     report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows, "designated": designated, "lp_labels": labels,
+              "dexes": [{"id": d["id"], "name": d["name"], "type": d["type"],
+                         "pools_tracked": sum(1 for p in pools if p["dex"] == d["id"]),
+                         "pools_shown": sum(1 for r in rows if r["dex"] == d["id"])} for d in dexes.values()],
               "alerts": [{"key": k, "severity": s, "message": m, "code": c, "params": p} for k, (s, m, c, p) in fired.items()]}
     out_dir = ROOT / "data" / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -255,12 +295,12 @@ def _f(v, fmt="{:,.0f}", none="-"):
 
 
 def render_console(rep):
-    lines = [f"Fluxion 流动性快照  block {rep['block']}  ETH(CEX) ${_f((rep['eth_usd'] or {}).get('price'), '{:,.2f}')}",
-             f"{'池子':<22}{'费率':>6}{'TVL':>13}{'±2%上':>10}{'±2%下':>10}{'±10%内占比':>11}{'$10k买冲击':>11}{'24h量':>11}{'偏离':>8}{'Top1 LP':>9}"]
+    lines = [f"Mantle DEX 流动性快照  block {rep['block']}  ETH(CEX) ${_f((rep['eth_usd'] or {}).get('price'), '{:,.2f}')}",
+             f"{'DEX':<14}{'池子':<22}{'费率':>6}{'TVL':>13}{'±2%上':>10}{'±2%下':>10}{'±10%内占比':>11}{'$10k买冲击':>11}{'24h量':>11}{'偏离':>8}{'Top1 LP':>9}"]
     for r in sorted(rep["pools"], key=lambda r: -(r["tvl_usd"] or 0)):
         d2 = r["depth"].get("2", {})
         imp = r["impact"].get("10000", {}).get("buy")
-        lines.append(f"{r['pair']:<22}{r['fee_pct']:>5}%{_f(r['tvl_usd'], '${:,.0f}'):>13}{_f(d2.get('up'), '${:,.0f}'):>10}"
+        lines.append(f"{r['dex_name']:<14}{r['pair']:<22}{r['fee_pct']:>5}%{_f(r['tvl_usd'], '${:,.0f}'):>13}{_f(d2.get('up'), '${:,.0f}'):>10}"
                      f"{_f(d2.get('down'), '${:,.0f}'):>10}{_f(r.get('in_band_10_pct'), '{:.1f}%'):>11}{_f(imp, '{:.2f}%', '不足'):>11}"
                      f"{_f(r['events_24h'].get('swap_usd', 0), '${:,.0f}'):>11}{_f(r.get('price_dev_pct'), '{:+.2f}%'):>8}"
                      f"{_f((r.get('lp') or {}).get('top1_pct'), '{:.0f}%'):>9}")
@@ -269,14 +309,14 @@ def render_console(rep):
 
 def render_md(rep):
     ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(rep["ts"]))
-    md = [f"# Fluxion AMM 流动性快照（{ts}）", "",
+    md = [f"# Mantle DEX 流动性快照（{ts}）", "",
           f"区块 {rep['block']}，ETH 参考价（CEX）${_f((rep['eth_usd'] or {}).get('price'), '{:,.2f}')}", "",
-          "| 池子 | 费率 | TVL | ±2% 上 | ±2% 下 | ±10% 内占 TVL | $10k 买入冲击 | 24h 成交 | 7d 费率 APR | 偏离参考价 | Top1 LP |",
-          "|---|---|---|---|---|---|---|---|---|---|---|"]
+          "| DEX | 池子 | 费率 | TVL | ±2% 上 | ±2% 下 | ±10% 内占 TVL | $10k 买入冲击 | 24h 成交 | 7d 费率 APR | 偏离参考价 | Top1 LP |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in sorted(rep["pools"], key=lambda r: -(r["tvl_usd"] or 0)):
         d2 = r["depth"].get("2", {})
         md.append("| " + " | ".join([
-            r["pair"], f"{r['fee_pct']}%", _f(r["tvl_usd"], "${:,.0f}"), _f(d2.get("up"), "${:,.0f}"), _f(d2.get("down"), "${:,.0f}"),
+            r["dex_name"], r["pair"], f"{r['fee_pct']}%", _f(r["tvl_usd"], "${:,.0f}"), _f(d2.get("up"), "${:,.0f}"), _f(d2.get("down"), "${:,.0f}"),
             _f(r.get("in_band_10_pct"), "{:.1f}%"), _f(r["impact"].get("10000", {}).get("buy"), "{:.2f}%", "流动性不足"),
             _f(r["events_24h"].get("swap_usd", 0), "${:,.0f}"), _f(r.get("fee_apr_7d_pct"), "{:.2f}%"),
             _f(r.get("price_dev_pct", r.get("price_dev_pct_raw")), "{:+.2f}%") + ("" if r.get("price_dev_pct") is not None or r.get("price_dev_pct_raw") is None else "（参考价过期）"),

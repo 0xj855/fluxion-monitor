@@ -9,7 +9,7 @@ def evaluate(r, prev, cfg):
     """r: 当前池子指标；prev: lookback 之前的快照（可能为 None）。返回 [(key, severity, code, params)]。"""
     a = cfg["alerts"]
     g = r["group"]
-    base = {"pool": r["pool"], "name": f"{r['pair']} ({r['fee_pct']}%)"}
+    base = {"pool": r["pool"], "name": f"{r.get('dex_name', '')} {r['pair']} ({r['fee_pct']}%)".strip()}
     out = []
     add = lambda key, sev, code, **p: out.append((f"{r['pool']}:{key}", sev, code, {**base, **p}))
     d2 = r.get("depth", {}).get("2")

@@ -2,7 +2,7 @@ name: monitor
 
 on:
   schedule:
-    - cron: "*/15 * * * *"     # GitHub 的定时任务高峰期可能延迟几分钟
+    - cron: "*/5 * * * *"      # GitHub 允许的最小间隔；高峰期可能延迟几分钟
   workflow_dispatch:
   push:
     branches: [main]

@@ -1,8 +1,48 @@
 {
   "rpc_url": "https://rpc.mantle.xyz",
-  "factory": "0xF883162Ed9c7E8EF604214c964c678E40c9B737C",
-  "factory_deploy_block": 87630777,
-  "npm": "0x2b70c4e7ca8e920435a5db191e066e9e3afd8db3",
+  "dexes": [
+    {
+      "id": "fluxion",
+      "name": "Fluxion",
+      "type": "v3",
+      "discovery": "events",
+      "factory": "0xF883162Ed9c7E8EF604214c964c678E40c9B737C",
+      "deploy_block": 87630777,
+      "npm": "0x2b70c4e7ca8e920435a5db191e066e9e3afd8db3",
+      "assets": [
+        "xstock",
+        "weth"
+      ]
+    },
+    {
+      "id": "agni",
+      "name": "Agni",
+      "type": "v3",
+      "discovery": "sweep",
+      "factory": "0x25780dc8Fc3cfBD75F33bFDAB65e969b603b2035",
+      "npm": "0x218bf598D1453383e2F4AA7b14fFB9BfB102D637",
+      "fees": [
+        100,
+        500,
+        2500,
+        10000
+      ],
+      "sweep_hours": 24,
+      "assets": [
+        "xstock"
+      ],
+      "_note": "NPM 已发行 30 万+ 持仓 NFT，不做全量扫描；LP 构成暂不统计"
+    },
+    {
+      "id": "moe",
+      "name": "Merchant Moe",
+      "type": "lb",
+      "factory": "0xa6630671775c4EA2743840F9A5016dCf2A104054",
+      "assets": [
+        "xstock"
+      ]
+    }
+  ],
   "weth": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead1111",
   "usdc": "0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9",
   "stables": {
@@ -59,6 +99,7 @@
       "HOODx",
       "METAx",
       "AAPLx"
-    ]
+    ],
+    "dex": "fluxion"
   }
 }

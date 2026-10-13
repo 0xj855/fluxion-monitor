@@ -5,12 +5,14 @@ from pathlib import Path
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
-CREATE TABLE IF NOT EXISTS pools (pool TEXT PRIMARY KEY, token0 TEXT, token1 TEXT, fee INT, tick_spacing INT, block INT);
+CREATE TABLE IF NOT EXISTS pools (pool TEXT PRIMARY KEY, token0 TEXT, token1 TEXT, fee INT, tick_spacing INT, block INT,
+  dex TEXT DEFAULT 'fluxion', kind TEXT DEFAULT 'v3');
 CREATE TABLE IF NOT EXISTS events (
   pool TEXT, block INT, log_index INT, kind TEXT, amount0 REAL, amount1 REAL, usd REAL, actor TEXT,
   PRIMARY KEY (pool, block, log_index));
 CREATE INDEX IF NOT EXISTS events_block ON events(block);
-CREATE TABLE IF NOT EXISTS positions (id INT PRIMARY KEY, pool TEXT, owner TEXT, tick_lower INT, tick_upper INT, liquidity TEXT);
+CREATE TABLE IF NOT EXISTS positions (npm TEXT, id INT, pool TEXT, owner TEXT, tick_lower INT, tick_upper INT, liquidity TEXT,
+  PRIMARY KEY (npm, id));
 CREATE TABLE IF NOT EXISTS snapshots (ts INT, block INT, pool TEXT, data TEXT, PRIMARY KEY (ts, pool));
 CREATE TABLE IF NOT EXISTS alerts (key TEXT PRIMARY KEY, severity TEXT, message TEXT, first_ts INT, last_ts INT, active INT);
 """
@@ -32,7 +34,19 @@ class Store:
     def __init__(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
+        self._migrate()
         self.db.executescript(SCHEMA)
+
+    def _migrate(self):
+        """旧版数据库（单 DEX）升级：pools 增加 dex/kind 列；positions 主键改为 (npm, id)，旧数据丢弃后重扫。"""
+        cols = lambda t: {r[1] for r in self.db.execute(f"PRAGMA table_info({t})")}
+        if cols("pools") and "dex" not in cols("pools"):
+            self.db.execute("ALTER TABLE pools ADD COLUMN dex TEXT DEFAULT 'fluxion'")
+            self.db.execute("ALTER TABLE pools ADD COLUMN kind TEXT DEFAULT 'v3'")
+        if cols("positions") and "npm" not in cols("positions"):
+            self.db.execute("DROP TABLE positions")
+            self.db.execute("DELETE FROM kv WHERE k IN ('npm_scanned_id', 'npm_pool_count')")
+        self.db.commit()
 
     def get(self, k, default=None):
         row = self.db.execute("SELECT v FROM kv WHERE k=?", (k,)).fetchone()
@@ -43,13 +57,14 @@ class Store:
         self.db.commit()
 
     def add_pools(self, pools):
-        self.db.executemany("INSERT OR IGNORE INTO pools VALUES (?,?,?,?,?,?)",
-                            [(p["pool"], p["token0"], p["token1"], p["fee"], p["tickSpacing"], p["block"]) for p in pools])
+        self.db.executemany("INSERT OR IGNORE INTO pools VALUES (?,?,?,?,?,?,?,?)",
+                            [(p["pool"], p["token0"], p["token1"], p["fee"], p["tickSpacing"], p["block"],
+                              p.get("dex", "fluxion"), p.get("kind", "v3")) for p in pools])
         self.db.commit()
 
     def pools(self):
-        cols = ("pool", "token0", "token1", "fee", "tickSpacing", "block")
-        return [dict(zip(cols, r)) for r in self.db.execute("SELECT * FROM pools")]
+        cols = ("pool", "token0", "token1", "fee", "tickSpacing", "block", "dex", "kind")
+        return [dict(zip(cols, r)) for r in self.db.execute(f"SELECT {', '.join(c if c != 'tickSpacing' else 'tick_spacing' for c in cols)} FROM pools")]
 
     def add_events(self, rows):
         self.db.executemany("INSERT OR IGNORE INTO events VALUES (?,?,?,?,?,?,?,?)", rows)
@@ -61,13 +76,15 @@ class Store:
             (pool, since_block)).fetchall()
 
     def upsert_positions(self, rows):
-        self.db.executemany("INSERT OR REPLACE INTO positions VALUES (?,?,?,?,?,?)", rows)
+        self.db.executemany("INSERT OR REPLACE INTO positions VALUES (?,?,?,?,?,?,?)", rows)
         self.db.commit()
 
-    def positions(self, pool=None):
-        q, a = "SELECT id,pool,owner,tick_lower,tick_upper,liquidity FROM positions", ()
+    def positions(self, pool=None, npm=None):
+        q, a = "SELECT id,pool,owner,tick_lower,tick_upper,liquidity FROM positions WHERE 1=1", ()
         if pool:
-            q, a = q + " WHERE pool=?", (pool,)
+            q, a = q + " AND pool=?", a + (pool,)
+        if npm:
+            q, a = q + " AND npm=?", a + (npm,)
         return [{"id": r[0], "pool": r[1], "owner": r[2], "tickLower": r[3], "tickUpper": r[4], "L": int(r[5])}
                 for r in self.db.execute(q, a)]
 

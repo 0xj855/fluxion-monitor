@@ -1,6 +1,6 @@
-# Fluxion 流动性监控（fluxion-monitor）
+# Mantle DEX 流动性监控（fluxion-monitor）
 
-监控 Mantle 上 Fluxion V3 AMM 中 **xStocks** 与 **WETH** 池子的流动性质量。**零第三方依赖**，Python 3.11+ 直接运行，数据全部来自链上（公共 RPC）+ Fluxion RFQ / K 线 + CEX 价格。
+监控 Mantle 上 **Fluxion V3**（xStocks + WETH）、**Merchant Moe Liquidity Book**（xStocks）、**Agni V3**（xStocks）池子的流动性质量。**零第三方依赖**，Python 3.11+ 直接运行，数据全部来自链上（公共 RPC）+ Fluxion RFQ / K 线 + CEX 价格。
 
 ```bash
 cd fluxion-monitor
@@ -9,6 +9,14 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 ```
 
 单次运行约 1–4 分钟（主要耗时在公共 RPC 限速和 RFQ 每秒 1 次的限速）。首次运行会回填 7 天事件并全量扫描 LP 持仓 NFT。
+
+## 覆盖的 DEX（`config/config.json → dexes`）
+
+| DEX | 类型 | 池子发现 | LP 构成 |
+|---|---|---|---|
+| Fluxion | Uniswap V3 | Factory `PoolCreated` 增量扫描 | NonfungiblePositionManager 全量扫描 |
+| Merchant Moe | Liquidity Book | LBFactory 按索引枚举 | `DepositedToBins` / `TransferBatch` 接收方 × 每个 bin 的份额 |
+| Agni | V3（Pancake 风格 Swap 事件） | 每 24h 用 `getPool` 穷举 xStocks × 计价币 × 费率档 | 暂不统计（持仓 NFT 30 万+） |
 
 ## 每轮做什么
 
@@ -62,7 +70,7 @@ xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deploym
 
 ## 在线看板（GitHub Pages）
 
-`.github/workflows/monitor.yml` 每 15 分钟在 GitHub Actions 上运行一次监控，并把 `site/index.html` 与最新数据发布到 GitHub Pages：
+`.github/workflows/monitor.yml` 每 5 分钟在 GitHub Actions 上运行一次监控，并把 `site/index.html` 与最新数据发布到 GitHub Pages：
 
 - 看板支持中文 / English（右上角切换，或 `?lang=en`）。
 - 看板读取 `data/latest.json`（当前快照，含 ±30% 流动性分布、累积深度曲线、LP 头寸）和 `data/history.json`（30 天时间序列）。

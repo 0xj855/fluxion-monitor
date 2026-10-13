@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fluxion Liquidity Monitor</title>
+<title>Mantle DEX Liquidity Monitor</title>
 <meta name="description" content="Liquidity quality of xStocks and WETH pools on Fluxion V3 AMM (Mantle): depth, distribution, price impact, price deviation, LP concentration.">
 <style>
 :root{
@@ -61,6 +61,9 @@ h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
 .alerts .msg{color:var(--ink);word-break:break-word}
 .ok{color:var(--good-text);font-weight:600}.bad{color:var(--critical);font-weight:600}
 .lbl{font-weight:600;margin-right:6px}
+.coverage{color:var(--muted);font-size:12.5px;margin:-6px 0 14px}
+.coverage b{color:var(--ink-2);font-weight:550}
+.dexb{display:inline-block;font-size:11px;color:var(--ink-2);border:1px solid var(--ring);border-radius:5px;padding:0 5px;margin-right:6px;font-weight:500;vertical-align:1px}
 .alerts .who{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .more{margin-top:8px}
 .btn{border:1px solid var(--ring);background:none;color:var(--ink-2);font:inherit;font-size:13px;padding:5px 10px;border-radius:7px;cursor:pointer}
@@ -115,7 +118,7 @@ footer code{font-size:11.5px}
 <div class="wrap">
   <header>
     <div>
-      <h1 data-i18n="title">Fluxion 流动性监控</h1>
+      <h1 data-i18n="title">Mantle DEX 流动性监控</h1>
       <div class="sub" data-i18n="subtitle">Mantle · Fluxion V3 AMM · xStocks 与 WETH 池</div>
     </div>
     <div class="head-r">
@@ -128,7 +131,14 @@ footer code{font-size:11.5px}
   </header>
 
   <div class="filters" role="toolbar" data-i18n-aria="filters" aria-label="Filters">
-    <span class="label" data-i18n="asset">资产</span>
+    <span class="label">DEX</span>
+    <div class="seg" id="f-dex">
+      <button data-v="all" aria-pressed="true" data-i18n="all">全部</button>
+      <button data-v="fluxion" aria-pressed="false">Fluxion</button>
+      <button data-v="moe" aria-pressed="false">Merchant Moe</button>
+      <button data-v="agni" aria-pressed="false">Agni</button>
+    </div>
+    <span class="label" style="margin-left:8px" data-i18n="asset">资产</span>
     <div class="seg" id="f-group">
       <button data-v="all" aria-pressed="true" data-i18n="all">全部</button>
       <button data-v="weth" aria-pressed="false">WETH</button>
@@ -142,6 +152,7 @@ footer code{font-size:11.5px}
     </div>
   </div>
 
+  <div class="coverage" id="coverage"></div>
   <div class="tiles" id="tiles"></div>
 
   <section class="card">
@@ -166,17 +177,19 @@ footer code{font-size:11.5px}
 (() => {
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
-const state = { group: "all", range: 7, sel: null, sort: { key: "tvl", asc: false }, latest: null, history: null };
+const state = { dex: "all", group: "all", range: 7, sel: null, sort: { key: "tvl", asc: false }, latest: null, history: null };
 const EXPLORER = "https://mantlescan.xyz/address/";
 
 // ---------- i18n ----------
 const I18N = {
   zh: {
-    title: "Fluxion 流动性监控", subtitle: "Mantle · Fluxion V3 AMM · xStocks 与 WETH 池", docTitle: "Fluxion 流动性监控",
+    title: "Mantle DEX 流动性监控", subtitle: "Fluxion · Merchant Moe · Agni — xStocks 与 WETH 池", docTitle: "Mantle DEX 流动性监控",
+    cover: (n, s) => `${n}：${s} 个池子`, coverNone: n => `${n}：暂无 xStocks 池（每日检查）`, coverSmall: (s, t) => `（另有 ${t - s} 个 TVL < $1,000 未显示）`, cDex: "DEX",
+    lbHolders: "按地址汇总的持仓（Liquidity Book 没有价格区间头寸，按 bin 份额折算）", lbCols: ["LP 地址", "持仓价值", "占池 TVL"], lpNoneAgni: "该 DEX 暂不统计 LP 构成",
     filters: "筛选", asset: "资产", all: "全部", range: "历史区间", r24h: "24 小时", r7d: "7 天", r30d: "30 天",
     alertsTitle: "当前告警", alertsDesc: "按规则实时判定；同一告警只在新触发 / 恢复时推送。",
     poolsTitle: "池子总览", poolsDesc: "点击一行查看详情。±2% 深度取上下两侧较小值；冲击含手续费。",
-    footer: "数据源：Mantle 链上（Fluxion V3 Factory <code>0xF883…737C</code>、NonfungiblePositionManager <code>0x2b70…8db3</code>）、Fluxion RFQ / K 线（xStocks 参考价）、Binance / Coinbase（ETH 参考价）。xStocks 在 AMM 中以 ERC-4626 包装币交易，偏离按 <code>convertToAssets</code> 换算后比较；美股休市时 RFQ/K 线参考价意义有限。每 15 分钟更新一次。",
+    footer: "数据源：Mantle 链上（Fluxion V3 Factory <code>0xF883…737C</code>、Merchant Moe LBFactory <code>0xa663…4054</code>、Agni Factory <code>0x2578…2035</code>）、Fluxion RFQ / K 线（xStocks 参考价）、Binance / Coinbase（ETH 参考价）。xStocks 在 AMM 中以 ERC-4626 包装币交易，偏离按 <code>convertToAssets</code> 换算后比较；美股休市时 RFQ/K 线参考价意义有限。Merchant Moe 交易成本只计基础费率。约每 5 分钟更新一次（GitHub 定时任务高峰期可能延迟）。",
     loadFail: "数据加载失败：", updated: "更新于 ", stale: "（数据已超过 1 小时未更新）",
     block: (b, e) => `区块 ${b} · ETH 参考价 $${e}`,
     agoS: n => n + " 秒前", agoM: n => n + " 分钟前", agoH: n => n + " 小时前", hourSuffix: "时",
@@ -191,7 +204,7 @@ const I18N = {
     spot: "现价", priceRange: "价格区间", reserveValue: "储备价值", viewTable: "查看数据表", noData: "暂无数据",
     curveTitle: "累积深度曲线", curveDesc: "价格单向移动 x% 需要吃掉的累计储备价值；曲线越陡，现价附近越深。",
     curveUp: "上涨方向（卖盘）", curveDown: "下跌方向（买盘）", curveX: v => `价格移动 ${v}%`,
-    histTitle: "历史走势", histDesc: d => `最近 ${d === 1 ? "24 小时" : d + " 天"}，每 15 分钟一个点。`, histWait: "历史数据积累中（至少需要两次快照）。", histFew: "该区间内数据不足。",
+    histTitle: "历史走势", histDesc: d => `最近 ${d === 1 ? "24 小时" : d + " 天"}，约每 5 分钟一个点。`, histWait: "历史数据积累中（至少需要两次快照）。", histFew: "该区间内数据不足。",
     hDepth: "±2% 深度（较小一侧）", hTvl: "TVL", hVol: "24h 滚动成交额", hDev: "池价偏离参考价",
     lpTitle: "LP 集中度", lpNone: "无持仓数据",
     lpDesc: l => `在区间内 ${l.active_positions} 个头寸、${l.lps} 个 LP 地址；Top1 占 ${pct(l.top1_pct, 1)}，Top3 占 ${pct(l.top3_pct, 1)}，HHI ${l.hhi.toFixed(3)}。占比 ≥5% 的头寸：`,
@@ -219,11 +232,13 @@ const I18N = {
     },
   },
   en: {
-    title: "Fluxion Liquidity Monitor", subtitle: "Mantle · Fluxion V3 AMM · xStocks & WETH pools", docTitle: "Fluxion Liquidity Monitor",
+    title: "Mantle DEX Liquidity Monitor", subtitle: "Fluxion · Merchant Moe · Agni — xStocks & WETH pools", docTitle: "Mantle DEX Liquidity Monitor",
+    cover: (n, s) => `${n}: ${s} pools`, coverNone: n => `${n}: no xStocks pools yet (checked daily)`, coverSmall: (s, t) => ` (${t - s} more under $1,000 TVL hidden)`, cDex: "DEX",
+    lbHolders: "Holdings by address (Liquidity Book has no range positions; valued by bin shares)", lbCols: ["LP address", "Value", "Share of pool TVL"], lpNoneAgni: "LP breakdown not tracked for this DEX",
     filters: "Filters", asset: "Asset", all: "All", range: "History", r24h: "24h", r7d: "7d", r30d: "30d",
     alertsTitle: "Active alerts", alertsDesc: "Evaluated by rule on every run; each alert is pushed only when it fires or resolves.",
     poolsTitle: "Pools", poolsDesc: "Click a row for details. ±2% depth is the thinner side; impact includes fees.",
-    footer: "Sources: Mantle on-chain data (Fluxion V3 Factory <code>0xF883…737C</code>, NonfungiblePositionManager <code>0x2b70…8db3</code>), Fluxion RFQ / klines (xStocks reference price), Binance / Coinbase (ETH reference price). xStocks trade on the AMM as ERC-4626 wrappers; deviation is compared after <code>convertToAssets</code> conversion. Reference prices are less meaningful while US markets are closed. Updated every 15 minutes.",
+    footer: "Sources: Mantle on-chain data (Fluxion V3 Factory <code>0xF883…737C</code>, Merchant Moe LBFactory <code>0xa663…4054</code>, Agni Factory <code>0x2578…2035</code>), Fluxion RFQ / klines (xStocks reference price), Binance / Coinbase (ETH reference price). xStocks trade on the AMM as ERC-4626 wrappers; deviation is compared after <code>convertToAssets</code> conversion. Reference prices are less meaningful while US markets are closed. Merchant Moe impact uses the base fee only. Updated roughly every 5 minutes (GitHub schedules may lag at peak times).",
     loadFail: "Failed to load data: ", updated: "Updated ", stale: " (data is more than 1 hour old)",
     block: (b, e) => `Block ${b} · ETH ref $${e}`,
     agoS: n => n + "s ago", agoM: n => n + " min ago", agoH: n => n + "h ago", hourSuffix: "h",
@@ -238,7 +253,7 @@ const I18N = {
     spot: "Spot", priceRange: "Price range", reserveValue: "Reserve value", viewTable: "View data table", noData: "No data",
     curveTitle: "Cumulative depth", curveDesc: "Cumulative reserve value consumed to move price x% in one direction; a steeper curve means deeper liquidity near spot.",
     curveUp: "Price up (asks)", curveDown: "Price down (bids)", curveX: v => `Price move ${v}%`,
-    histTitle: "History", histDesc: d => `Last ${d === 1 ? "24 hours" : d + " days"}, one point every 15 minutes.`, histWait: "Collecting history (needs at least two snapshots).", histFew: "Not enough data in this range.",
+    histTitle: "History", histDesc: d => `Last ${d === 1 ? "24 hours" : d + " days"}, one point roughly every 5 minutes.`, histWait: "Collecting history (needs at least two snapshots).", histFew: "Not enough data in this range.",
     hDepth: "±2% depth (thinner side)", hTvl: "TVL", hVol: "Rolling 24h volume", hDev: "Pool price deviation vs ref",
     lpTitle: "LP concentration", lpNone: "No position data",
     lpDesc: l => `${l.active_positions} in-range positions from ${l.lps} LP addresses; Top1 holds ${pct(l.top1_pct, 1)}, Top3 ${pct(l.top3_pct, 1)}, HHI ${l.hhi.toFixed(3)}. Positions with ≥5% share:`,
@@ -317,7 +332,7 @@ async function load() {
     $("#meta").textContent = T().loadFail + e.message;
   } finally { root.classList.remove("fade"); }
 }
-const visible = () => state.latest.pools.filter(p => state.group === "all" || p.group === state.group);
+const visible = () => state.latest.pools.filter(p => (state.group === "all" || p.group === state.group) && (state.dex === "all" || (p.dex || "fluxion") === state.dex));
 
 // ---------- render ----------
 function render() {
@@ -326,7 +341,8 @@ function render() {
   $("#meta").replaceChildren(
     el("div", {}, T().updated, el("b", { text: ago(L.ts) }), age > 3600 ? el("span", { class: "stale", text: T().stale }) : ""),
     el("div", { text: T().block(L.block.toLocaleString(), L.eth_usd ? L.eth_usd.price.toFixed(2) : "–") }));
-  renderTiles(); renderAlerts(); renderLpMix(); renderTable(); renderDetail();
+  if (!visible().some(p => p.pool === state.sel)) state.sel = (visible().slice().sort((a, b) => (b.tvl_usd || 0) - (a.tvl_usd || 0))[0] || {}).pool;
+  renderCoverage(); renderTiles(); renderAlerts(); renderLpMix(); renderTable(); renderDetail();
 }
 
 function renderTiles() {
@@ -344,10 +360,22 @@ function renderTiles() {
   $("#tiles").replaceChildren(...tiles.map(([k, v, d]) => el("div", { class: "tile" }, el("div", { class: "k", text: k }), el("div", { class: "v", text: v }), d ? el("div", { class: "d", text: d }) : "")));
 }
 function inGroup(a) {
-  if (state.group === "all") return true;
   const pool = a.key.split(":")[0];
+  if (pool === "designated") return state.dex === "all" || state.dex === "fluxion";
   const p = state.latest.pools.find(x => x.pool === pool);
-  return p ? p.group === state.group : true;
+  if (!p) return true;
+  return (state.group === "all" || p.group === state.group) && (state.dex === "all" || (p.dex || "fluxion") === state.dex);
+}
+function renderCoverage() {
+  const D = state.latest.dexes || [];
+  const parts = D.filter(d => state.dex === "all" || d.id === state.dex).map(d => {
+    const sp = el("span");
+    if (!d.pools_tracked) sp.append(T().coverNone(d.name));
+    else { sp.append(el("b", { text: T().cover(d.name, d.pools_shown) })); if (d.pools_tracked > d.pools_shown) sp.append(T().coverSmall(d.pools_shown, d.pools_tracked)); }
+    return sp;
+  });
+  const box = $("#coverage"); box.replaceChildren();
+  parts.forEach((x, i) => { if (i) box.append(" · "); box.append(x); });
 }
 
 function renderAlerts() {
@@ -375,7 +403,7 @@ const ownerCell = addr => { const td = el("td"); const lb = state.latest.lp_labe
 
 function renderLpMix() {
   const box = $("#lpmix"), D = state.latest.designated;
-  if (!D || state.group === "weth") { box.hidden = true; return; }
+  if (!D || state.group === "weth" || !(state.dex === "all" || state.dex === "fluxion")) { box.hidden = true; return; }
   box.hidden = false;
   const lbl = D.committed_label;
   const stats = [[T().mixTvl, usd(D.tvl_usd)], [T().mixLps, String(D.holders.length)]];
@@ -405,7 +433,7 @@ function renderLpMix() {
 }
 
 const COLS = [
-  { key: "pair", label: "cPair", get: p => p.pair, cell: p => { const f = el("td"); f.append(el("span", { class: "pair", text: p.pair }), el("span", { class: "fee", text: p.fee_pct + "%" })); return f; } },
+  { key: "pair", label: "cPair", get: p => p.pair, cell: p => { const f = el("td"); f.append(el("span", { class: "dexb", text: p.dex_name || "Fluxion" }), el("span", { class: "pair", text: p.pair }), el("span", { class: "fee", text: p.fee_pct + "%" })); return f; } },
   { key: "tvl", label: "cTvl", get: p => p.tvl_usd, fmt: usd },
   { key: "d2", label: "cD2", get: p => p.depth["2"] ? Math.min(p.depth["2"].up, p.depth["2"].down) : null, fmt: usd },
   { key: "imp", label: "cImp", get: p => p.impact["10000"]?.buy, fmt: v => v == null ? T().insufficient : pct(v) },
@@ -447,7 +475,7 @@ function renderDetail() {
   const p = state.latest.pools.find(x => x.pool === state.sel);
   if (!p) { box.replaceChildren(el("div", { class: "empty", text: T().pickPool })); return; }
   const head = el("div", { class: "detail-head" },
-    el("h2", {}, p.pair, el("span", { class: "fee", text: T().feeTier(p.fee_pct) })),
+    el("h2", {}, el("span", { class: "dexb", text: p.dex_name || "Fluxion" }), p.pair, el("span", { class: "fee", text: T().feeTier(p.fee_pct) + (p.bin_step ? ` · bin ${p.bin_step / 100}%` : "") })),
     el("a", { href: EXPLORER + p.pool, target: "_blank", rel: "noopener", text: T().poolContract + short(p.pool) + " ↗" }));
   const imp = s => p.impact[s] ? `${pct(p.impact[s].buy)} / ${pct(p.impact[s].sell)}` : "–";
   const mini = el("div", { class: "mini" }, ...[
@@ -632,7 +660,14 @@ function lpBlock(p) {
   const wrap = el("div", { style: "margin-top:20px" });
   wrap.append(el("h2", { text: T().lpTitle }));
   const lp = p.lp;
-  if (!lp) { wrap.append(el("div", { class: "empty", text: T().lpNone })); return wrap; }
+  if (!lp) { wrap.append(el("div", { class: "empty", text: p.dex === "agni" ? T().lpNoneAgni : T().lpNone })); return wrap; }
+  if (p.kind === "lb") {
+    wrap.append(el("p", { class: "desc", text: T().lbHolders }));
+    const t = el("table"); t.append(el("thead", {}, el("tr", {}, ...T().lbCols.map(x => el("th", { text: x })))));
+    t.append(el("tbody", {}, ...(lp.holders || []).slice(0, 15).map(h => el("tr", {}, ownerCell(h.owner), el("td", { text: usd(h.usd) }), el("td", { text: pct(h.share_pct, 1) })))));
+    wrap.append(el("div", { class: "tablewrap" }, t));
+    return wrap;
+  }
   wrap.append(el("p", { class: "desc", text: T().lpDesc(lp) }));
   const tbl = el("table");
   tbl.append(el("thead", {}, el("tr", {}, ...T().lpCols(p.base).map(t => el("th", { text: t })))));
@@ -652,7 +687,9 @@ function seg(id, key, cast) {
     for (const x of $(id).querySelectorAll("button")) x.setAttribute("aria-pressed", x === b);
     state[key] = cast(b.dataset.v); render(); });
 }
-seg("#f-group", "group", String); seg("#f-range", "range", Number);
+const qsDex = new URLSearchParams(location.search).get("dex");
+if (["fluxion", "moe", "agni"].includes(qsDex)) { state.dex = qsDex; for (const x of document.querySelectorAll("#f-dex button")) x.setAttribute("aria-pressed", x.dataset.v === qsDex); }
+seg("#f-dex", "dex", String); seg("#f-group", "group", String); seg("#f-range", "range", Number);
 $("#f-lang").addEventListener("click", e => { const b = e.target.closest("button"); if (!b || b.dataset.v === LANG) return;
   LANG = b.dataset.v; try { localStorage.setItem("fluxmon.lang", LANG); } catch (err) {}
   applyStatic(); if (state.latest) render(); });

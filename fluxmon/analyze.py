@@ -1,7 +1,15 @@
 """把链上状态转成美元口径的流动性质量指标。"""
 import math
 
-from .v3 import band_reserves, swap_exact_in
+from . import lb, v3
+
+
+def band_reserves(st, factor):
+    return (lb if st.get("kind") == "lb" else v3).band_reserves(st, factor)
+
+
+def swap_exact_in(st, amount_in, zero_for_one, fee):
+    return (lb if st.get("kind") == "lb" else v3).swap_exact_in(st, amount_in, zero_for_one, fee)
 
 
 def orient(pool, meta, cfg, xst):
@@ -37,6 +45,8 @@ def analyze_pool(pool, st, meta, usd, cfg, xst):
     base, quote = (t0, t1) if base_is0 else (t1, t0)
     r = {
         "pool": pool["pool"], "fee_pct": pool["fee"] / 1e4, "group": group_of(pool, cfg, xst),
+        "dex": pool.get("dex", "fluxion"), "kind": pool.get("kind", "v3"),
+        "bin_step": pool["tickSpacing"] if pool.get("kind") == "lb" else None,
         "pair": f"{base['symbol']}/{quote['symbol']}", "base": base["symbol"], "quote": quote["symbol"],
         "base_addr": pool["token0"] if base_is0 else pool["token1"],
         "tick": st["tick"], "active_L": str(st["L"]), "initialized_ticks": len(st["ticks"]),
@@ -132,3 +142,13 @@ def lp_holders(positions, val, tvl, labels):
     for h in out:
         h["share_pct"] = h["usd"] / tvl * 100 if tvl else None
     return out
+
+
+def lp_from_holders(hs):
+    """LB 池：没有价格区间头寸的概念，直接按 LP 地址的美元价值算集中度。hs 已按 usd 降序。"""
+    tot = sum(h["usd"] for h in hs)
+    if not tot:
+        return {"lps": 0, "active_positions": 0, "top1_pct": 0, "top3_pct": 0, "hhi": 0, "top_owner": None, "big_ranges": [], "holders": hs}
+    shares = [h["usd"] / tot for h in hs]
+    return {"lps": len(hs), "active_positions": len(hs), "top1_pct": shares[0] * 100, "top3_pct": sum(shares[:3]) * 100,
+            "hhi": sum(x * x for x in shares), "top_owner": hs[0]["owner"], "big_ranges": [], "holders": hs}
