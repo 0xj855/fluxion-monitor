@@ -76,6 +76,7 @@ def xstock_reference(symbol, native, usdc, rfq_size_usdc=1000):
     ref["rfq_http"] = s
     if s == 200 and j and j.get("rawPrice"):
         ref["rfq_price"] = float(j["rawPrice"])
+        ref["rfq_raw"] = j
     now = int(time.time() * 1000)
     code = symbol[:-1].replace(".", "").upper()
     url = (f"{USPX_KLINE_URL}?ticker={code}" if symbol == "USPXx" else f"{KLINE_URL}?symbol={code}USDT") \
@@ -88,3 +89,79 @@ def xstock_reference(symbol, native, usdc, rfq_size_usdc=1000):
     ref["price"] = ref["rfq_price"] or ref["kline_price"]
     ref["source"] = "rfq" if ref["rfq_price"] else ("kline" if ref["kline_price"] else None)
     return ref
+
+
+def probe_rfq_depth(symbol, native, usdc, depth_sizes_usd=(1000, 10000, 50000, 100000),
+                    sell_sizes_usd=(1000, 10000), delay_s=1.05, base_ref=None):
+    """探测指定 xStock 的 RFQ 双向做市报价与各档承接深度。"""
+    # 1. 基础买入报价（$1,000）
+    if base_ref and "rfq_http" in base_ref:
+        s1 = base_ref["rfq_http"]
+        j1 = base_ref.get("rfq_raw")
+    else:
+        s1, j1 = http(RFQ_URL, {"tokenIn": usdc, "tokenOut": native, "amount": str(1000 * 10 ** 6), "type": "EXACT_INPUT"})
+
+    if s1 != 200 or not j1 or not j1.get("price"):
+        return {
+            "symbol": symbol, "native": native, "status": "no_quote", "http_status": s1,
+            "ask_1k": None, "bid_1k": None, "mid_price": None,
+            "spread_usd": None, "spread_pct": None, "spread_bps": None,
+            "buy_depth": {}, "sell_depth": {}, "max_buy_usd": 0, "max_sell_usd": 0
+        }
+
+    ask_1k = float(j1["price"])
+    raw_1k = float(j1.get("rawPrice", ask_1k))
+    buy_depth = {"1000": {"price": ask_1k, "raw_price": raw_1k, "impact_pct": 0.0, "status": 200}}
+
+    # 2. 探测更高买入档位
+    for sz in depth_sizes_usd:
+        if sz == 1000:
+            continue
+        time.sleep(delay_s)
+        s, j = http(RFQ_URL, {"tokenIn": usdc, "tokenOut": native, "amount": str(sz * 10 ** 6), "type": "EXACT_INPUT"})
+        if s == 200 and j and j.get("price"):
+            p = float(j["price"])
+            rp = float(j.get("rawPrice", p))
+            buy_depth[str(sz)] = {"price": p, "raw_price": rp, "impact_pct": round((p / ask_1k - 1) * 100, 4), "status": 200}
+        else:
+            buy_depth[str(sz)] = {"price": None, "status": s}
+            break
+
+    # 3. 探测卖出档位（按 ask_1k 折算股数）
+    sell_depth = {}
+    base_bid = None
+    for sz in sell_sizes_usd:
+        shares = sz / ask_1k
+        amt_in = int(shares * 10 ** 18)
+        time.sleep(delay_s)
+        s, j = http(RFQ_URL, {"tokenIn": native, "tokenOut": usdc, "amount": str(amt_in), "type": "EXACT_INPUT"})
+        if s == 200 and j and j.get("amountOut"):
+            usdc_out = int(j["amountOut"]) / 1e6
+            eff_price = usdc_out / shares
+            p = float(j.get("price", eff_price))
+            rp = float(j.get("rawPrice", eff_price))
+            if base_bid is None:
+                base_bid = eff_price
+            impact = round((1 - eff_price / base_bid) * 100, 4) if base_bid else 0.0
+            sell_depth[str(sz)] = {"price": eff_price, "quote_price": p, "raw_price": rp, "impact_pct": impact, "status": 200}
+        else:
+            sell_depth[str(sz)] = {"price": None, "status": s}
+            break
+
+    bid_1k = sell_depth.get("1000", {}).get("price")
+    mid = (ask_1k + (bid_1k or ask_1k)) / 2
+    spread_usd = round(ask_1k - bid_1k, 4) if bid_1k else None
+    spread_pct = round(((ask_1k - bid_1k) / mid * 100), 4) if bid_1k else None
+    spread_bps = round(spread_pct * 100, 1) if spread_pct else None
+
+    max_buy = max([int(k) for k, v in buy_depth.items() if v.get("status") == 200] or [0])
+    max_sell = max([int(k) for k, v in sell_depth.items() if v.get("status") == 200] or [0])
+
+    return {
+        "symbol": symbol, "native": native, "status": "active", "http_status": 200,
+        "ask_1k": ask_1k, "bid_1k": bid_1k, "mid_price": mid,
+        "spread_usd": spread_usd, "spread_pct": spread_pct, "spread_bps": spread_bps,
+        "buy_depth": buy_depth, "sell_depth": sell_depth,
+        "max_buy_usd": max_buy, "max_sell_usd": max_sell
+    }
+

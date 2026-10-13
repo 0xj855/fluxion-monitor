@@ -23,9 +23,10 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 1. **发现池子**：增量扫描 Factory `PoolCreated`，筛出含 WETH 或 xStocks（native / ERC-4626 包装币）的池子；两侧都必须是可信资产（稳定币 / WETH / xStocks / `extra_tokens`），测试币池被排除。
 2. **读池子状态**：Multicall3 一次性读 `slot0`、`liquidity`、全部 `tickBitmap` 与已初始化 tick 的 `liquidityNet`。
 3. **计算指标**（美元口径，见下表）。
-4. **同步事件**：Swap / Mint / Burn 增量入库 → 24h / 7d 成交、费率 APR、大额撤出。
-5. **LP 集中度**：扫描 NonfungiblePositionManager 的持仓 NFT → 每个池子在区间内流动性的持有人分布、主要头寸距区间边界的距离。
-6. **告警**：按 `config/config.json` 阈值判定，按 key 去重，只在新触发 / 恢复时推送。
+4. **RFQ 深度探测**：对主流 xStocks（SOW 10 个指定标的）向 Fluxion RFQ 接口探测双向做市报价、买卖价差（Spread）及多档买卖深度（$1k / $10k / $50k / $100k），并与链上 AMM 冲击横向对比。
+5. **同步事件**：Swap / Mint / Burn 增量入库 → 24h / 7d 成交、费率 APR、大额撤出。
+6. **LP 集中度**：扫描 NonfungiblePositionManager 的持仓 NFT → 每个池子在区间内流动性的持有人分布、主要头寸距区间边界的距离。
+7. **告警**：按 `config/config.json` 阈值判定，按 key 去重，只在新触发 / 恢复时推送。
 
 ## 指标口径
 
@@ -34,6 +35,7 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 | ±x% 深度 | 订单簿口径：base 价格移动 x% 过程中被吃掉的储备价值（上 = 卖盘，下 = 买盘），不含手续费 |
 | ±10% 内占 TVL | ±10% 两侧深度之和 / TVL。全区间（v2 式）约 4.9%，越高说明流动性越集中在现价附近 |
 | $10k 买入冲击 | 精确模拟 exact-input swap（逐 tick），按中间价计的价值损耗，**含 0.3% 手续费**；已与 Fluxion QuoterV2 交叉验证 |
+| RFQ 价格深度与滑点 | 探测 RFQ 在 $1k / $10k / $50k / $100k 规模下的买入/卖出报价、买卖双向价差（bps）及承接滑点 |
 | 偏离参考价 | WETH：对 Binance/Coinbase 均价；xStocks：对 Fluxion RFQ `rawPrice`（无报价时用 1 分钟 K 线收盘价，超过 15 分钟视为过期不告警），并按包装币 `convertToAssets` 换算 |
 | Top1 LP | 当前在区间内的流动性中，单一地址的占比 |
 

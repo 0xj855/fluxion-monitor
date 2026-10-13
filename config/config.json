@@ -69,6 +69,20 @@
   ],
   "event_backfill_days": 7,
   "rfq_size_usdc": 1000,
+  "rfq_depth": {
+    "enabled": true,
+    "depth_sizes_usd": [
+      1000,
+      10000,
+      50000,
+      100000
+    ],
+    "sell_sizes_usd": [
+      1000,
+      10000
+    ],
+    "delay_s": 1.05
+  },
   "alerts": {
     "depth2_min_usd": {
       "weth": 50000,

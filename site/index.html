@@ -162,6 +162,8 @@ footer code{font-size:11.5px}
 
   <section class="card" id="lpmix"></section>
 
+  <section class="card" id="rfq"></section>
+
   <section class="card">
     <h2 data-i18n="poolsTitle">池子总览</h2>
     <p class="desc" data-i18n="poolsDesc"></p>
@@ -214,6 +216,14 @@ const I18N = {
     mixTvl: "10 池合计 TVL", mixLps: "LP 地址数", mixVsCommit: l => `${l} 资金 / 约定`, met: "达标", short: "不足",
     mixCols: ["LP", "资金", "占 10 池 TVL", "覆盖池子", "头寸数"], mixOthers: n => `其余 ${n} 个地址`, mixUnattr: "未归属（未领取手续费等）",
     mixPoolCols: l => ["池子", "TVL", l || "最大 LP", "其他 LP 资金", "其他 LP 数"], mixMissing: p => `未覆盖：${p.join("、")}`,
+    rfqTitle: "Fluxion RFQ 流动性与价格深度",
+    rfqDesc: "链下做市商针对 native xStocks 的实时报价、买卖双向价差与多档承接深度（$1k ～ $100k），并与链上 AMM 池流动性及滑点进行横向对比。",
+    rfqActive: "报价在线率", rfqActiveVal: (a, t) => `${a} / ${t} 在线`,
+    rfqSpread: "平均买卖价差",
+    rfqDepth: "最大测试承接深度", rfqDepthVal: d => `$${d} (0 滑点)`,
+    rfqAdvantage: "RFQ vs AMM $10k 冲击", rfqAdvantageVal: "0.00% vs 15%+",
+    rfqCols: ["标的", "状态", "买价 Ask ($1k)", "卖价 Bid ($1k)", "买卖价差", "RFQ $10k", "RFQ $50k", "RFQ $100k", "RFQ 卖出 $10k", "AMM $10k 冲击", "AMM 偏离 RFQ"],
+    rfqStatusOk: "正常", rfqStatusNoQuote: c => `无报价 (${c})`,
     group: {
       depth_min: n => `${n} 个池子 ±2% 深度低于阈值`, depth_drop: n => `${n} 个池子 ±2% 深度骤降`, tvl_drop: n => `${n} 个池子 TVL 骤降`,
       price_dev: n => `${n} 个池子价格偏离参考价`, lp_conc: n => `${n} 个池子由单一 LP 提供大部分流动性`,
@@ -263,6 +273,14 @@ const I18N = {
     mixTvl: "10-pool TVL", mixLps: "LP addresses", mixVsCommit: l => `${l} capital / committed`, met: "Met", short: "Short",
     mixCols: ["LP", "Capital", "Share of 10-pool TVL", "Pools", "Positions"], mixOthers: n => `${n} other addresses`, mixUnattr: "Unattributed (uncollected fees etc.)",
     mixPoolCols: l => ["Pool", "TVL", l || "Top LP", "Other LPs' capital", "Other LPs"], mixMissing: p => `Not covered: ${p.join(", ")}`,
+    rfqTitle: "Fluxion RFQ Liquidity & Price Depth",
+    rfqDesc: "Off-chain market maker quotes, bid-ask spreads, and multi-tier depth ($1k – $100k) for native xStocks, compared against on-chain AMM liquidity and price impact.",
+    rfqActive: "Quoting availability", rfqActiveVal: (a, t) => `${a} / ${t} online`,
+    rfqSpread: "Avg bid-ask spread",
+    rfqDepth: "Max tested depth", rfqDepthVal: d => `$${d} (0 slippage)`,
+    rfqAdvantage: "RFQ vs AMM $10k impact", rfqAdvantageVal: "0.00% vs 15%+",
+    rfqCols: ["Asset", "Status", "Ask ($1k)", "Bid ($1k)", "Spread", "RFQ $10k", "RFQ $50k", "RFQ $100k", "RFQ Sell $10k", "AMM $10k Impact", "AMM vs RFQ Dev"],
+    rfqStatusOk: "Online", rfqStatusNoQuote: c => `No quote (${c})`,
     group: {
       depth_min: n => `${n} pools have ±2% depth below threshold`, depth_drop: n => `${n} pools saw ±2% depth drop sharply`, tvl_drop: n => `${n} pools saw TVL drop sharply`,
       price_dev: n => `${n} pools deviate from reference price`, lp_conc: n => `${n} pools rely on a single LP for most liquidity`,
@@ -342,7 +360,7 @@ function render() {
     el("div", {}, T().updated, el("b", { text: ago(L.ts) }), age > 3600 ? el("span", { class: "stale", text: T().stale }) : ""),
     el("div", { text: T().block(L.block.toLocaleString(), L.eth_usd ? L.eth_usd.price.toFixed(2) : "–") }));
   if (!visible().some(p => p.pool === state.sel)) state.sel = (visible().slice().sort((a, b) => (b.tvl_usd || 0) - (a.tvl_usd || 0))[0] || {}).pool;
-  renderCoverage(); renderTiles(); renderAlerts(); renderLpMix(); renderTable(); renderDetail();
+  renderCoverage(); renderTiles(); renderAlerts(); renderLpMix(); renderRfq(); renderTable(); renderDetail();
 }
 
 function renderTiles() {
@@ -430,6 +448,84 @@ function renderLpMix() {
   box.replaceChildren(el("h2", { text: T().mixTitle }), el("p", { class: "desc", text: T().mixDesc }), mini,
     el("div", { class: "grid2" }, el("div", { class: "tablewrap" }, ht), el("div", { class: "tablewrap" }, pt)));
   if (D.missing_pairs?.length) box.append(el("p", { class: "desc bad", text: T().mixMissing(D.missing_pairs) }));
+}
+
+function renderRfq() {
+  const box = $("#rfq"), R = state.latest?.rfq;
+  if (!R || state.group === "weth" || !(state.dex === "all" || state.dex === "fluxion")) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const sm = R.summary || {};
+  const stats = [
+    [T().rfqActive, T().rfqActiveVal(sm.active || 0, sm.total || 0)],
+    [T().rfqSpread, sm.avg_spread_bps ? `${sm.avg_spread_bps.toFixed(1)} bps (${(sm.avg_spread_bps / 100).toFixed(2)}%)` : "–"],
+    [T().rfqDepth, T().rfqDepthVal(compact(sm.max_depth_usd || 0))],
+    [T().rfqAdvantage, T().rfqAdvantageVal]
+  ];
+  const mini = el("div", { class: "mini" }, ...stats.map(([k, v]) => el("div", {}, el("div", { class: "k", text: k }), el("div", { class: "v", text: v }))));
+
+  const t = el("table");
+  t.append(el("thead", {}, el("tr", {}, ...T().rfqCols.map(x => el("th", { text: x })))));
+  const tb = el("tbody");
+  for (const it of R.items || []) {
+    const tr = el("tr");
+    const isOk = it.status === "active";
+    const statText = isOk ? T().rfqStatusOk : T().rfqStatusNoQuote(it.http_status || 204);
+
+    const symTd = el("td", { class: "pair", text: it.symbol });
+    const statTd = el("td", {}, el("span", { class: isOk ? "ok" : "bad", text: statText }));
+    const askTd = el("td", { text: it.ask_1k ? "$" + price(it.ask_1k) : "–" });
+    const bidTd = el("td", { text: it.bid_1k ? "$" + price(it.bid_1k) : "–" });
+    const spTd = el("td", { text: it.spread_bps != null ? `${it.spread_bps.toFixed(1)} bps` : "–" });
+
+    const b10 = it.buy_depth?.["10000"]?.impact_pct;
+    const b50 = it.buy_depth?.["50000"]?.impact_pct;
+    const b100 = it.buy_depth?.["100000"]?.impact_pct;
+    const s10 = it.sell_depth?.["10000"]?.impact_pct;
+
+    const b10Td = el("td", { text: b10 != null ? pct(b10, 2, true) : "–" });
+    const b50Td = el("td", { text: b50 != null ? pct(b50, 2, true) : "–" });
+    const b100Td = el("td", { text: b100 != null ? pct(b100, 2, true) : "–" });
+    const s10Td = el("td", { text: s10 != null ? pct(s10, 2, true) : "–" });
+
+    const amm = it.amm;
+    const ammImp = amm?.impact_10k_buy;
+    const ammImpTd = el("td");
+    if (ammImp != null) {
+      ammImpTd.textContent = pct(ammImp);
+      if (ammImp > 5) ammImpTd.className = "bad";
+    } else {
+      ammImpTd.textContent = amm ? T().insufficient : "–";
+    }
+
+    const dev = amm?.dev_pct;
+    const devTd = el("td", { text: dev != null ? pct(dev, 2, true) : "–" });
+    if (dev != null && Math.abs(dev) > 1.5) devTd.className = "neg";
+
+    if (amm?.pool) {
+      tr.style.cursor = "pointer";
+      tr.onclick = () => {
+        state.sel = amm.pool;
+        renderTable();
+        renderDetail();
+        $("#detail").scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      symTd.title = `${amm.pair} (点击查看 AMM 池详情)`;
+    }
+
+    tr.append(symTd, statTd, askTd, bidTd, spTd, b10Td, b50Td, b100Td, s10Td, ammImpTd, devTd);
+    tb.append(tr);
+  }
+  t.append(tb);
+
+  box.replaceChildren(
+    el("h2", { text: T().rfqTitle }),
+    el("p", { class: "desc", text: T().rfqDesc }),
+    mini,
+    el("div", { class: "tablewrap" }, t)
+  );
 }
 
 const COLS = [

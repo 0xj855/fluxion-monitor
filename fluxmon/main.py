@@ -12,7 +12,7 @@ from . import lb
 from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sweep_pools, sync_events, sync_pools, sync_positions
-from .sources import eth_usd, wrapper_ratios, xstock_reference, xstocks_catalog
+from .sources import eth_usd, probe_rfq_depth, wrapper_ratios, xstock_reference, xstocks_catalog
 from .store import Store
 from .v3 import read_pool
 
@@ -250,6 +250,69 @@ def run(args):
     # ---- SOW 指定池子：TVL 与 LP 构成
     designated = designated_summary(rows, cfg, labels, xcat)
 
+    # ---- Fluxion RFQ 流动性与价格深度探测
+    rfq_data = None
+    rfq_cfg = cfg.get("rfq_depth", {})
+    if rfq_cfg.get("enabled", True) and not getattr(args, "skip_rfq_depth", False):
+        rfq_symbols = cfg.get("designated", {}).get("pairs") or sorted(refs.keys())
+        rfq_native_map = {}
+        for a, info in xcat.items():
+            if info["kind"] == "native" and info["symbol"] in rfq_symbols:
+                rfq_native_map[info["symbol"]] = a
+
+        depth_sizes = rfq_cfg.get("depth_sizes_usd", [1000, 10000, 50000, 100000])
+        sell_sizes = rfq_cfg.get("sell_sizes_usd", [1000, 10000])
+        delay = rfq_cfg.get("delay_s", 1.05)
+
+        flux_xrows = {xcat[r["base_addr"]]["symbol"]: r for r in rows if r["dex"] == "fluxion" and r["base_addr"] in xcat and r["quote"] == "USDC"}
+
+        rfq_items = []
+        for sym in rfq_symbols:
+            native = rfq_native_map.get(sym)
+            if not native:
+                continue
+            base_ref = refs.get(sym)
+            item = probe_rfq_depth(sym, native, cfg["usdc"], depth_sizes, sell_sizes, delay, base_ref=base_ref)
+
+            amm_row = flux_xrows.get(sym)
+            if amm_row:
+                ratio = ratios.get(amm_row["base_addr"]) or 1.0
+                amm_native_px = (amm_row["price"] / ratio) if amm_row.get("price") and ratio else None
+                mid = item.get("mid_price") or item.get("ask_1k")
+                d2 = amm_row.get("depth", {}).get("2")
+                d2_val = min(d2["up"], d2["down"]) if d2 else None
+                item["amm"] = {
+                    "pool": amm_row["pool"],
+                    "pair": amm_row["pair"],
+                    "fee_pct": amm_row["fee_pct"],
+                    "tvl_usd": amm_row["tvl_usd"],
+                    "depth_2pct_usd": d2_val,
+                    "price": amm_row["price"],
+                    "native_price": amm_native_px,
+                    "wrapper_ratio": ratio,
+                    "impact_10k_buy": amm_row["impact"].get("10000", {}).get("buy"),
+                    "dev_pct": ((amm_native_px / mid - 1) * 100) if (amm_native_px and mid) else None
+                }
+            else:
+                item["amm"] = None
+            rfq_items.append(item)
+
+        active_items = [it for it in rfq_items if it["status"] == "active"]
+        avg_spread = (sum(it["spread_bps"] for it in active_items if it.get("spread_bps") is not None) / len(active_items)) if active_items else None
+        rfq_data = {
+            "ts": now,
+            "sizes_usd": depth_sizes,
+            "sell_sizes_usd": sell_sizes,
+            "summary": {
+                "total": len(rfq_items),
+                "active": len(active_items),
+                "no_quote": len(rfq_items) - len(active_items),
+                "avg_spread_bps": round(avg_spread, 1) if avg_spread else None,
+                "max_depth_usd": max([it.get("max_buy_usd", 0) for it in active_items] or [0])
+            },
+            "items": rfq_items
+        }
+
     # ---- 告警（去重：仅新触发 / 恢复时推送）
     a = cfg["alerts"]
     fired = {}
@@ -273,7 +336,7 @@ def run(args):
         r.pop("_val", None)
     store.save_snapshot(now, head, rows)
 
-    report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows, "designated": designated, "lp_labels": labels,
+    report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows, "designated": designated, "rfq": rfq_data, "lp_labels": labels,
               "dexes": [{"id": d["id"], "name": d["name"], "type": d["type"],
                          "pools_tracked": sum(1 for p in pools if p["dex"] == d["id"]),
                          "pools_shown": sum(1 for r in rows if r["dex"] == d["id"])} for d in dexes.values()],
@@ -304,6 +367,23 @@ def render_console(rep):
                      f"{_f(d2.get('down'), '${:,.0f}'):>10}{_f(r.get('in_band_10_pct'), '{:.1f}%'):>11}{_f(imp, '{:.2f}%', '不足'):>11}"
                      f"{_f(r['events_24h'].get('swap_usd', 0), '${:,.0f}'):>11}{_f(r.get('price_dev_pct'), '{:+.2f}%'):>8}"
                      f"{_f((r.get('lp') or {}).get('top1_pct'), '{:.0f}%'):>9}")
+    if rep.get("rfq"):
+        rfq = rep["rfq"]
+        sm = rfq["summary"]
+        lines.append("")
+        lines.append(f"Fluxion RFQ 流动性与价格深度（{sm['active']}/{sm['total']} 在线，平均价差 {_f(sm.get('avg_spread_bps'), '{:.1f} bps')}，最大承接 ${_f(sm.get('max_depth_usd'), '{:,.0f}')}）")
+        lines.append(f"{'标的':<8}{'状态':<10}{'买价($1k)':>11}{'卖价($1k)':>11}{'价差':>10}{'RFQ $10k':>11}{'RFQ $100k':>12}{'AMM $10k':>11}{'AMM偏离':>9}")
+        for it in rfq["items"]:
+            stat = "正常" if it["status"] == "active" else f"无报价({it.get('http_status')})"
+            ask = _f(it.get("ask_1k"), "${:,.2f}")
+            bid = _f(it.get("bid_1k"), "${:,.2f}")
+            sp = f"{it['spread_bps']:.1f} bps" if it.get("spread_bps") is not None else "-"
+            b10 = _f(it.get("buy_depth", {}).get("10000", {}).get("impact_pct"), "{:+.2f}%")
+            b100 = _f(it.get("buy_depth", {}).get("100000", {}).get("impact_pct"), "{:+.2f}%")
+            amm = it.get("amm") or {}
+            amm_imp = _f(amm.get("impact_10k_buy"), "{:.2f}%", "不足") if amm else "-"
+            amm_dev = _f(amm.get("dev_pct"), "{:+.2f}%") if amm else "-"
+            lines.append(f"{it['symbol']:<8}{stat:<10}{ask:>11}{bid:>11}{sp:>10}{b10:>11}{b100:>12}{amm_imp:>11}{amm_dev:>9}")
     return "\n".join(lines)
 
 
@@ -321,6 +401,31 @@ def render_md(rep):
             _f(r["events_24h"].get("swap_usd", 0), "${:,.0f}"), _f(r.get("fee_apr_7d_pct"), "{:.2f}%"),
             _f(r.get("price_dev_pct", r.get("price_dev_pct_raw")), "{:+.2f}%") + ("" if r.get("price_dev_pct") is not None or r.get("price_dev_pct_raw") is None else "（参考价过期）"),
             _f((r.get("lp") or {}).get("top1_pct"), "{:.1f}%")]) + " |")
+    if rep.get("rfq"):
+        rfq = rep["rfq"]
+        sm = rfq["summary"]
+        md += [
+            "",
+            "## Fluxion RFQ 流动性与价格深度",
+            "",
+            f"做市商在线 **{sm['active']}/{sm['total']}**，平均买卖价差 **{_f(sm.get('avg_spread_bps'), '{:.1f} bps')}**，主流标的单笔最高承接 **${_f(sm.get('max_depth_usd'), '{:,.0f}')}**（0 滑点）。",
+            "",
+            "| 标的 | RFQ 状态 | 买价 Ask ($1k) | 卖价 Bid ($1k) | 买卖价差 | RFQ $10k 冲击 | RFQ $50k 冲击 | RFQ $100k 冲击 | RFQ $10k 卖出冲击 | AMM $10k 买入冲击 | AMM 偏离 RFQ |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for it in rfq["items"]:
+            stat = "正常" if it["status"] == "active" else f"无报价 ({it.get('http_status')})"
+            ask = _f(it.get("ask_1k"), "${:,.2f}")
+            bid = _f(it.get("bid_1k"), "${:,.2f}")
+            sp = f"{it['spread_bps']:.1f} bps" if it.get("spread_bps") is not None else "-"
+            b10 = _f(it.get("buy_depth", {}).get("10000", {}).get("impact_pct"), "{:+.2f}%")
+            b50 = _f(it.get("buy_depth", {}).get("50000", {}).get("impact_pct"), "{:+.2f}%")
+            b100 = _f(it.get("buy_depth", {}).get("100000", {}).get("impact_pct"), "{:+.2f}%")
+            s10 = _f(it.get("sell_depth", {}).get("10000", {}).get("impact_pct"), "{:+.2f}%")
+            amm = it.get("amm") or {}
+            amm_imp = _f(amm.get("impact_10k_buy"), "{:.2f}%", "流动性不足") if amm else "-"
+            amm_dev = _f(amm.get("dev_pct"), "{:+.2f}%") if amm else "-"
+            md.append(f"| {it['symbol']} | {stat} | {ask} | {bid} | {sp} | {b10} | {b50} | {b100} | {s10} | {amm_imp} | {amm_dev} |")
     md += ["", "## 当前告警", ""] + [f"- **{a['severity']}** {a['message']}" for a in rep["alerts"]]
     return "\n".join(md) + "\n"
 
@@ -329,6 +434,7 @@ def main():
     ap = argparse.ArgumentParser(description="Fluxion AMM 流动性质量监控（xStocks / WETH）")
     ap.add_argument("--no-notify", action="store_true", help="不推送飞书 webhook")
     ap.add_argument("--skip-positions", action="store_true", help="跳过 LP 持仓同步（首次全量较慢）")
+    ap.add_argument("--skip-rfq-depth", action="store_true", help="跳过 RFQ 多档深度探测")
     run(ap.parse_args())
 
 
