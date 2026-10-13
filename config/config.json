@@ -83,6 +83,37 @@
     ],
     "delay_s": 1.05
   },
+  "rfq_sla": {
+    "tiers": {
+      "TSLAx": "Tier 1",
+      "NVDAx": "Tier 1",
+      "AAPLx": "Tier 1",
+      "SPYx": "Tier 1",
+      "QQQx": "Tier 1",
+      "GOOGLx": "Tier 2",
+      "METAx": "Tier 2",
+      "MSTRx": "Tier 2",
+      "CRCLx": "Tier 3",
+      "HOODx": "Tier 3"
+    },
+    "benchmarks": {
+      "market_open": {
+        "Tier 1": [5.0, 10.0],
+        "Tier 2": [7.5, 15.0],
+        "Tier 3": [12.5, 25.0]
+      },
+      "pre_post": {
+        "Tier 1": [20.0, 40.0],
+        "Tier 2": [30.0, 60.0],
+        "Tier 3": [50.0, 100.0]
+      },
+      "weekend": {
+        "Tier 1": [50.0, 100.0],
+        "Tier 2": [75.0, 100.0],
+        "Tier 3": [125.0, 250.0]
+      }
+    }
+  },
   "alerts": {
     "depth2_min_usd": {
       "weth": 50000,

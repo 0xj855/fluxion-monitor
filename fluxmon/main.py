@@ -12,7 +12,7 @@ from . import lb
 from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sweep_pools, sync_events, sync_pools, sync_positions
-from .sources import eth_usd, probe_rfq_depth, wrapper_ratios, xstock_reference, xstocks_catalog
+from .sources import eth_usd, get_trading_session, probe_rfq_depth, wrapper_ratios, xstock_reference, xstocks_catalog
 from .store import Store
 from .v3 import read_pool
 
@@ -267,12 +267,44 @@ def run(args):
         flux_xrows = {xcat[r["base_addr"]]["symbol"]: r for r in rows if r["dex"] == "fluxion" and r["base_addr"] in xcat and r["quote"] == "USDC"}
 
         rfq_items = []
+        session_info = get_trading_session()
+        sla_cfg = cfg.get("rfq_sla", {})
+        sla_tiers = sla_cfg.get("tiers", {})
+        sla_bms = sla_cfg.get("benchmarks", {}).get(session_info["session"], {})
         for sym in rfq_symbols:
             native = rfq_native_map.get(sym)
             if not native:
                 continue
             base_ref = refs.get(sym)
             item = probe_rfq_depth(sym, native, cfg["usdc"], depth_sizes, sell_sizes, delay, base_ref=base_ref)
+
+            tier = sla_tiers.get(sym, "Tier 2")
+            item["tier"] = tier
+            bm = sla_bms.get(tier, [20.0, 40.0])
+            item["sla_bm_mid_bps"] = bm
+            item["sla_bm_spread_bps"] = [round(b * 2, 1) for b in bm]
+
+            if item["status"] != "active":
+                if session_info["is_open"]:
+                    item["sla_status"] = "missing_open"
+                    item["sla_text_zh"] = "盘中缺报价"
+                    item["sla_text_en"] = "Missing in Open"
+                else:
+                    item["sla_status"] = "unquoted_off_hours"
+                    item["sla_text_zh"] = "盘前盘后无报价" if session_info["session"] == "pre_post" else "周末无报价"
+                    item["sla_text_en"] = "Unquoted Off-Hours"
+            else:
+                actual_mid_bps = item["spread_bps"] / 2 if item.get("spread_bps") is not None else None
+                item["actual_mid_bps"] = round(actual_mid_bps, 1) if actual_mid_bps is not None else None
+                if actual_mid_bps is not None and actual_mid_bps <= bm[1]:
+                    item["sla_status"] = "pass"
+                    item["sla_text_zh"] = "达标"
+                    item["sla_text_en"] = "Pass"
+                else:
+                    item["sla_status"] = "wide"
+                    diff = (actual_mid_bps - bm[1]) if actual_mid_bps is not None else 0
+                    item["sla_text_zh"] = f"超标 (+{diff:.1f}bps)"
+                    item["sla_text_en"] = f"Wide (+{diff:.1f}bps)"
 
             amm_row = flux_xrows.get(sym)
             if amm_row:
@@ -301,6 +333,7 @@ def run(args):
         avg_spread = (sum(it["spread_bps"] for it in active_items if it.get("spread_bps") is not None) / len(active_items)) if active_items else None
         rfq_data = {
             "ts": now,
+            "session": session_info,
             "sizes_usd": depth_sizes,
             "sell_sizes_usd": sell_sizes,
             "summary": {
@@ -308,6 +341,8 @@ def run(args):
                 "active": len(active_items),
                 "no_quote": len(rfq_items) - len(active_items),
                 "avg_spread_bps": round(avg_spread, 1) if avg_spread else None,
+                "avg_mid_bps": round(avg_spread / 2, 1) if avg_spread else None,
+                "sla_pass_count": sum(1 for it in rfq_items if it.get("sla_status") == "pass"),
                 "max_depth_usd": max([it.get("max_buy_usd", 0) for it in active_items] or [0])
             },
             "items": rfq_items
@@ -370,20 +405,25 @@ def render_console(rep):
     if rep.get("rfq"):
         rfq = rep["rfq"]
         sm = rfq["summary"]
+        sess = rfq.get("session") or {}
+        sess_title = f"{sess.get('name_zh', '未知时段')} · {sess.get('et_time', '')}"
         lines.append("")
-        lines.append(f"Fluxion RFQ 流动性与价格深度（{sm['active']}/{sm['total']} 在线，平均价差 {_f(sm.get('avg_spread_bps'), '{:.1f} bps')}，最大承接 ${_f(sm.get('max_depth_usd'), '{:,.0f}')}）")
-        lines.append(f"{'标的':<8}{'状态':<10}{'买价($1k)':>11}{'卖价($1k)':>11}{'价差':>10}{'RFQ $10k':>11}{'RFQ $100k':>12}{'AMM $10k':>11}{'AMM偏离':>9}")
+        lines.append(f"Fluxion RFQ 流动性与价格深度 [{sess_title}]")
+        lines.append(f"  在线 {sm['active']}/{sm['total']} · SLA达标 {sm.get('sla_pass_count', 0)}/{sm['total']} · 均价差 {_f(sm.get('avg_spread_bps'), '{:.1f} bps')} (mid {_f(sm.get('avg_mid_bps'), '{:.1f} bps')}) · 最大承接 ${_f(sm.get('max_depth_usd'), '{:,.0f}')}")
+        lines.append(f"{'标的':<8}{'层级':<8}{'状态':<10}{'SLA承诺(mid)':>14}{'实际(mid)':>11}{'买卖价差':>10}{'SLA判定':>12}{'RFQ $10k':>10}{'RFQ $100k':>11}{'AMM $10k':>10}{'AMM偏离':>9}")
         for it in rfq["items"]:
             stat = "正常" if it["status"] == "active" else f"无报价({it.get('http_status')})"
-            ask = _f(it.get("ask_1k"), "${:,.2f}")
-            bid = _f(it.get("bid_1k"), "${:,.2f}")
+            tier = it.get("tier", "-")
+            bm = f"{it['sla_bm_mid_bps'][0]:.0f}-{it['sla_bm_mid_bps'][1]:.0f} bps" if it.get("sla_bm_mid_bps") else "-"
+            mid_bps = f"{it['actual_mid_bps']:.1f} bps" if it.get("actual_mid_bps") is not None else "-"
             sp = f"{it['spread_bps']:.1f} bps" if it.get("spread_bps") is not None else "-"
+            sla_text = it.get("sla_text_zh", "-")
             b10 = _f(it.get("buy_depth", {}).get("10000", {}).get("impact_pct"), "{:+.2f}%")
             b100 = _f(it.get("buy_depth", {}).get("100000", {}).get("impact_pct"), "{:+.2f}%")
             amm = it.get("amm") or {}
             amm_imp = _f(amm.get("impact_10k_buy"), "{:.2f}%", "不足") if amm else "-"
             amm_dev = _f(amm.get("dev_pct"), "{:+.2f}%") if amm else "-"
-            lines.append(f"{it['symbol']:<8}{stat:<10}{ask:>11}{bid:>11}{sp:>10}{b10:>11}{b100:>12}{amm_imp:>11}{amm_dev:>9}")
+            lines.append(f"{it['symbol']:<8}{tier:<8}{stat:<10}{bm:>14}{mid_bps:>11}{sp:>10}{sla_text:>12}{b10:>10}{b100:>11}{amm_imp:>10}{amm_dev:>9}")
     return "\n".join(lines)
 
 
@@ -404,28 +444,35 @@ def render_md(rep):
     if rep.get("rfq"):
         rfq = rep["rfq"]
         sm = rfq["summary"]
+        sess = rfq.get("session") or {}
+        sess_name = sess.get("name_zh", "")
+        et_time = sess.get("et_time", "")
         md += [
             "",
             "## Fluxion RFQ 流动性与价格深度",
             "",
-            f"做市商在线 **{sm['active']}/{sm['total']}**，平均买卖价差 **{_f(sm.get('avg_spread_bps'), '{:.1f} bps')}**，主流标的单笔最高承接 **${_f(sm.get('max_depth_usd'), '{:,.0f}')}**（0 滑点）。",
+            f"- **当前美股时段**：**{sess_name}**（美东时间 `{et_time}`）",
+            f"- **做市概况**：在线 **{sm['active']}/{sm['total']}**，SLA 达标 **{sm.get('sla_pass_count', 0)}/{sm['total']}**，平均买卖价差 **{_f(sm.get('avg_spread_bps'), '{:.1f} bps')}**（折合中价点差 {_f(sm.get('avg_mid_bps'), '{:.1f} bps')}），单笔最高承接 **${_f(sm.get('max_depth_usd'), '{:,.0f}')}**（0 滑点）。",
             "",
-            "| 标的 | RFQ 状态 | 买价 Ask ($1k) | 卖价 Bid ($1k) | 买卖价差 | RFQ $10k 冲击 | RFQ $50k 冲击 | RFQ $100k 冲击 | RFQ $10k 卖出冲击 | AMM $10k 买入冲击 | AMM 偏离 RFQ |",
-            "|---|---|---|---|---|---|---|---|---|---|---|",
+            "| 标的 | Tier | RFQ 状态 | SLA 承诺 (from mid) | 实际点差 (mid) | 买卖价差 (Spread) | SLA 判定 | 买价 Ask ($1k) | 卖价 Bid ($1k) | RFQ $10k 冲击 | RFQ $50k 冲击 | RFQ $100k 冲击 | AMM $10k 买入冲击 | AMM 偏离 RFQ |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         for it in rfq["items"]:
             stat = "正常" if it["status"] == "active" else f"无报价 ({it.get('http_status')})"
+            tier = it.get("tier", "-")
+            bm = f"{it['sla_bm_mid_bps'][0]:.0f}–{it['sla_bm_mid_bps'][1]:.0f} bps" if it.get("sla_bm_mid_bps") else "-"
+            mid_bps = f"{it['actual_mid_bps']:.1f} bps" if it.get("actual_mid_bps") is not None else "-"
+            sp = f"{it['spread_bps']:.1f} bps" if it.get("spread_bps") is not None else "-"
+            sla_text = it.get("sla_text_zh", "-")
             ask = _f(it.get("ask_1k"), "${:,.2f}")
             bid = _f(it.get("bid_1k"), "${:,.2f}")
-            sp = f"{it['spread_bps']:.1f} bps" if it.get("spread_bps") is not None else "-"
             b10 = _f(it.get("buy_depth", {}).get("10000", {}).get("impact_pct"), "{:+.2f}%")
             b50 = _f(it.get("buy_depth", {}).get("50000", {}).get("impact_pct"), "{:+.2f}%")
             b100 = _f(it.get("buy_depth", {}).get("100000", {}).get("impact_pct"), "{:+.2f}%")
-            s10 = _f(it.get("sell_depth", {}).get("10000", {}).get("impact_pct"), "{:+.2f}%")
             amm = it.get("amm") or {}
             amm_imp = _f(amm.get("impact_10k_buy"), "{:.2f}%", "流动性不足") if amm else "-"
             amm_dev = _f(amm.get("dev_pct"), "{:+.2f}%") if amm else "-"
-            md.append(f"| {it['symbol']} | {stat} | {ask} | {bid} | {sp} | {b10} | {b50} | {b100} | {s10} | {amm_imp} | {amm_dev} |")
+            md.append(f"| {it['symbol']} | {tier} | {stat} | {bm} | {mid_bps} | {sp} | {sla_text} | {ask} | {bid} | {b10} | {b50} | {b100} | {amm_imp} | {amm_dev} |")
     md += ["", "## 当前告警", ""] + [f"- **{a['severity']}** {a['message']}" for a in rep["alerts"]]
     return "\n".join(md) + "\n"
 

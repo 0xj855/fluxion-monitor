@@ -60,6 +60,16 @@ h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
 .sev.critical i{background:var(--critical)} .sev.warn i{background:var(--warning);color:#0b0b0b} .sev.info i{background:var(--muted)}
 .alerts .msg{color:var(--ink);word-break:break-word}
 .ok{color:var(--good-text);font-weight:600}.bad{color:var(--critical);font-weight:600}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:4px;font-weight:600;line-height:1.4}
+.tag.pass{background:rgba(16,185,129,.15);color:var(--good-text)}
+.tag.wide{background:rgba(239,68,68,.15);color:var(--critical)}
+.tag.missing_open{background:rgba(239,68,68,.15);color:var(--critical)}
+.tag.unquoted_off_hours{background:var(--hover);color:var(--muted);border:1px solid var(--ring)}
+.sess-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:6px 0 14px;padding:8px 12px;background:var(--hover);border:1px solid var(--ring);border-radius:8px;font-size:12.5px}
+.sess-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.sess-dot.open{background:var(--good);box-shadow:0 0 6px var(--good)}
+.sess-dot.closed{background:var(--warning)}
+.tier-tag{display:inline-block;font-size:10.5px;padding:0 5px;border-radius:4px;border:1px solid var(--ring);color:var(--ink-2);font-weight:600}
 .lbl{font-weight:600;margin-right:6px}
 .coverage{color:var(--muted);font-size:12.5px;margin:-6px 0 14px}
 .coverage b{color:var(--ink-2);font-weight:550}
@@ -217,12 +227,14 @@ const I18N = {
     mixCols: ["LP", "资金", "占 10 池 TVL", "覆盖池子", "头寸数"], mixOthers: n => `其余 ${n} 个地址`, mixUnattr: "未归属（未领取手续费等）",
     mixPoolCols: l => ["池子", "TVL", l || "最大 LP", "其他 LP 资金", "其他 LP 数"], mixMissing: p => `未覆盖：${p.join("、")}`,
     rfqTitle: "Fluxion RFQ 流动性与价格深度",
-    rfqDesc: "链下做市商针对 native xStocks 的实时报价、买卖双向价差与多档承接深度（$1k ～ $100k），并与链上 AMM 池流动性及滑点进行横向对比。",
+    rfqDesc: "做市商针对 native xStocks 的实时报价、买卖双向价差与多档承接深度（$1k ～ $100k），并严格按美股交易时段（盘中 / 盘前盘后 / 周末）对照做市 SLA 承诺基准进行质检。",
+    rfqSess: "美股交易时段",
     rfqActive: "报价在线率", rfqActiveVal: (a, t) => `${a} / ${t} 在线`,
+    rfqSlaMet: "SLA 达标率", rfqSlaMetVal: (p, t) => `${p} / ${t} 达标`,
     rfqSpread: "平均买卖价差",
     rfqDepth: "最大测试承接深度", rfqDepthVal: d => `$${d} (0 滑点)`,
     rfqAdvantage: "RFQ vs AMM $10k 冲击", rfqAdvantageVal: "0.00% vs 15%+",
-    rfqCols: ["标的", "状态", "买价 Ask ($1k)", "卖价 Bid ($1k)", "买卖价差", "RFQ $10k", "RFQ $50k", "RFQ $100k", "RFQ 卖出 $10k", "AMM $10k 冲击", "AMM 偏离 RFQ"],
+    rfqCols: ["标的", "层级", "RFQ 状态", "SLA 承诺 (mid)", "实际点差 (mid)", "买卖价差", "SLA 判定", "买价 Ask ($1k)", "卖价 Bid ($1k)", "RFQ $10k", "RFQ $50k", "RFQ $100k", "AMM $10k 冲击", "AMM 偏离 RFQ"],
     rfqStatusOk: "正常", rfqStatusNoQuote: c => `无报价 (${c})`,
     group: {
       depth_min: n => `${n} 个池子 ±2% 深度低于阈值`, depth_drop: n => `${n} 个池子 ±2% 深度骤降`, tvl_drop: n => `${n} 个池子 TVL 骤降`,
@@ -274,12 +286,14 @@ const I18N = {
     mixCols: ["LP", "Capital", "Share of 10-pool TVL", "Pools", "Positions"], mixOthers: n => `${n} other addresses`, mixUnattr: "Unattributed (uncollected fees etc.)",
     mixPoolCols: l => ["Pool", "TVL", l || "Top LP", "Other LPs' capital", "Other LPs"], mixMissing: p => `Not covered: ${p.join(", ")}`,
     rfqTitle: "Fluxion RFQ Liquidity & Price Depth",
-    rfqDesc: "Off-chain market maker quotes, bid-ask spreads, and multi-tier depth ($1k – $100k) for native xStocks, compared against on-chain AMM liquidity and price impact.",
+    rfqDesc: "Real-time market maker quotes, bid-ask spreads, and multi-tier depth ($1k – $100k) for native xStocks, benchmarked against SLA commitments by US market session (Market Open / Pre-Post / Weekend).",
+    rfqSess: "Trading Session",
     rfqActive: "Quoting availability", rfqActiveVal: (a, t) => `${a} / ${t} online`,
+    rfqSlaMet: "SLA compliance", rfqSlaMetVal: (p, t) => `${p} / ${t} met`,
     rfqSpread: "Avg bid-ask spread",
     rfqDepth: "Max tested depth", rfqDepthVal: d => `$${d} (0 slippage)`,
     rfqAdvantage: "RFQ vs AMM $10k impact", rfqAdvantageVal: "0.00% vs 15%+",
-    rfqCols: ["Asset", "Status", "Ask ($1k)", "Bid ($1k)", "Spread", "RFQ $10k", "RFQ $50k", "RFQ $100k", "RFQ Sell $10k", "AMM $10k Impact", "AMM vs RFQ Dev"],
+    rfqCols: ["Asset", "Tier", "RFQ Status", "SLA (from mid)", "Actual (mid)", "Spread", "SLA Status", "Ask ($1k)", "Bid ($1k)", "RFQ $10k", "RFQ $50k", "RFQ $100k", "AMM $10k Impact", "AMM vs RFQ Dev"],
     rfqStatusOk: "Online", rfqStatusNoQuote: c => `No quote (${c})`,
     group: {
       depth_min: n => `${n} pools have ±2% depth below threshold`, depth_drop: n => `${n} pools saw ±2% depth drop sharply`, tvl_drop: n => `${n} pools saw TVL drop sharply`,
@@ -458,9 +472,21 @@ function renderRfq() {
   }
   box.hidden = false;
   const sm = R.summary || {};
+  const sess = R.session || {};
+  const isZh = T().locale === "zh-CN";
+  const sessName = isZh ? (sess.name_zh || "未知时段") : (sess.name_en || "Unknown Session");
+  const etTime = sess.et_time || "";
+
+  const sessBar = el("div", { class: "sess-bar" },
+    el("i", { class: `sess-dot ${sess.is_open ? "open" : "closed"}` }),
+    el("span", {}, el("b", { text: T().rfqSess + "：" }), sessName),
+    el("span", { style: "color:var(--muted);margin-left:auto" }, "ET " + etTime)
+  );
+
   const stats = [
     [T().rfqActive, T().rfqActiveVal(sm.active || 0, sm.total || 0)],
-    [T().rfqSpread, sm.avg_spread_bps ? `${sm.avg_spread_bps.toFixed(1)} bps (${(sm.avg_spread_bps / 100).toFixed(2)}%)` : "–"],
+    [T().rfqSlaMet, T().rfqSlaMetVal(sm.sla_pass_count || 0, sm.total || 0)],
+    [T().rfqSpread, sm.avg_spread_bps ? `${sm.avg_spread_bps.toFixed(1)} bps (mid ${((sm.avg_spread_bps || 0) / 2).toFixed(1)} bps)` : "–"],
     [T().rfqDepth, T().rfqDepthVal(compact(sm.max_depth_usd || 0))],
     [T().rfqAdvantage, T().rfqAdvantageVal]
   ];
@@ -475,20 +501,32 @@ function renderRfq() {
     const statText = isOk ? T().rfqStatusOk : T().rfqStatusNoQuote(it.http_status || 204);
 
     const symTd = el("td", { class: "pair", text: it.symbol });
+    const tierTd = el("td", {}, el("span", { class: "tier-tag", text: it.tier || "Tier 2" }));
     const statTd = el("td", {}, el("span", { class: isOk ? "ok" : "bad", text: statText }));
+
+    const bm = it.sla_bm_mid_bps;
+    const bmText = bm ? `${bm[0]}–${bm[1]} bps` : "–";
+    const slaBmTd = el("td", { text: bmText });
+
+    const midBpsText = it.actual_mid_bps != null ? `${it.actual_mid_bps.toFixed(1)} bps` : "–";
+    const actualMidTd = el("td", { text: midBpsText });
+
+    const spTd = el("td", { text: it.spread_bps != null ? `${it.spread_bps.toFixed(1)} bps` : "–" });
+
+    const slaStatus = it.sla_status || "off";
+    const slaText = isZh ? (it.sla_text_zh || "–") : (it.sla_text_en || "–");
+    const slaTd = el("td", {}, el("span", { class: `tag ${slaStatus}`, text: slaText }));
+
     const askTd = el("td", { text: it.ask_1k ? "$" + price(it.ask_1k) : "–" });
     const bidTd = el("td", { text: it.bid_1k ? "$" + price(it.bid_1k) : "–" });
-    const spTd = el("td", { text: it.spread_bps != null ? `${it.spread_bps.toFixed(1)} bps` : "–" });
 
     const b10 = it.buy_depth?.["10000"]?.impact_pct;
     const b50 = it.buy_depth?.["50000"]?.impact_pct;
     const b100 = it.buy_depth?.["100000"]?.impact_pct;
-    const s10 = it.sell_depth?.["10000"]?.impact_pct;
 
     const b10Td = el("td", { text: b10 != null ? pct(b10, 2, true) : "–" });
     const b50Td = el("td", { text: b50 != null ? pct(b50, 2, true) : "–" });
     const b100Td = el("td", { text: b100 != null ? pct(b100, 2, true) : "–" });
-    const s10Td = el("td", { text: s10 != null ? pct(s10, 2, true) : "–" });
 
     const amm = it.amm;
     const ammImp = amm?.impact_10k_buy;
@@ -515,7 +553,7 @@ function renderRfq() {
       symTd.title = `${amm.pair} (点击查看 AMM 池详情)`;
     }
 
-    tr.append(symTd, statTd, askTd, bidTd, spTd, b10Td, b50Td, b100Td, s10Td, ammImpTd, devTd);
+    tr.append(symTd, tierTd, statTd, slaBmTd, actualMidTd, spTd, slaTd, askTd, bidTd, b10Td, b50Td, b100Td, ammImpTd, devTd);
     tb.append(tr);
   }
   t.append(tb);
@@ -523,6 +561,7 @@ function renderRfq() {
   box.replaceChildren(
     el("h2", { text: T().rfqTitle }),
     el("p", { class: "desc", text: T().rfqDesc }),
+    sessBar,
     mini,
     el("div", { class: "tablewrap" }, t)
   );

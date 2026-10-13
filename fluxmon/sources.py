@@ -1,8 +1,9 @@
-"""外部参考数据：xStocks 资产目录、ETH 中心化交易所价格、xStocks RFQ / K 线参考价。"""
+from datetime import datetime
 import json
 import time
 import urllib.error
 import urllib.request
+from zoneinfo import ZoneInfo
 
 from .chain import multicall
 
@@ -164,4 +165,48 @@ def probe_rfq_depth(symbol, native, usdc, depth_sizes_usd=(1000, 10000, 50000, 1
         "buy_depth": buy_depth, "sell_depth": sell_depth,
         "max_buy_usd": max_buy, "max_sell_usd": max_sell
     }
+
+
+def get_trading_session(dt=None):
+    """根据美东时间（ET）计算当前美股交易时段：
+    - market_open: 9:30 AM – 4:00 PM ET (周一至周五)
+    - pre_post: 盘前盘后工作日时段 (周一至周五其余时间)
+    - weekend: 周末时段 (周六、周日)
+    """
+    if dt is None:
+        dt = datetime.now(ZoneInfo("America/New_York"))
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/New_York"))
+    else:
+        dt = dt.astimezone(ZoneInfo("America/New_York"))
+
+    weekday = dt.weekday()
+    mins = dt.hour * 60 + dt.minute
+
+    if weekday in (5, 6):
+        session = "weekend"
+        name_zh = "周末时段 (Weekend Hours)"
+        name_en = "Weekend Hours"
+        is_open = False
+    elif 9 * 60 + 30 <= mins < 16 * 60:
+        session = "market_open"
+        name_zh = "美股盘中时段 (Market Open, 9:30 AM – 4:00 PM ET)"
+        name_en = "Market Open Hours (9:30 AM – 4:00 PM ET)"
+        is_open = True
+    else:
+        session = "pre_post"
+        is_pre = mins < 9 * 60 + 30
+        tag = "盘前" if is_pre else "盘后"
+        name_zh = f"工作日{tag}时段 (Pre-Post Weekday Hours)"
+        name_en = f"Pre-Post Weekday Hours ({'Pre-Market' if is_pre else 'Post-Market'})"
+        is_open = False
+
+    return {
+        "session": session,
+        "name_zh": name_zh,
+        "name_en": name_en,
+        "et_time": dt.strftime("%H:%M:%S ET"),
+        "is_open": is_open
+    }
+
 
