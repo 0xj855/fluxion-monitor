@@ -174,6 +174,8 @@ footer code{font-size:11.5px}
 
   <section class="card" id="rfq"></section>
 
+  <section class="card" id="venue"></section>
+
   <section class="card">
     <h2 data-i18n="poolsTitle">池子总览</h2>
     <p class="desc" data-i18n="poolsDesc"></p>
@@ -236,6 +238,16 @@ const I18N = {
     rfqAdvantage: "RFQ vs AMM $10k 冲击", rfqAdvantageVal: "0.00% vs 15%+",
     rfqCols: ["标的", "层级", "RFQ 状态", "SLA 承诺 (mid)", "实际点差 (mid)", "买卖价差", "SLA 判定", "买价 Ask ($1k)", "卖价 Bid ($1k)", "RFQ $10k", "RFQ $50k", "RFQ $100k", "AMM $10k 冲击", "AMM 偏离 RFQ"],
     rfqStatusOk: "正常", rfqStatusNoQuote: c => `无报价 (${c})`,
+    vTitle: "跨链比价：Fluxion RFQ vs Solana（Jupiter）",
+    vDesc: "同一 xStock 在 Mantle（Fluxion RFQ）与 Solana（Jupiter 聚合最优路由）上的可成交报价。成本 = 相对美股最新成交价的 bps（越低越好）；优势 = Fluxion 比 Jupiter 省多少 bps（正数 = Fluxion 更优）。Solana 价格已按股息 multiplier 换算成每股。",
+    vWins: w => `Fluxion ${w.flux} / Jupiter ${w.jup} / 持平 ${w.tie}`,
+    vBuy10: "$10k 买入更优", vBuy100: "$100k 买入更优", vSell10: "$10k 卖出更优",
+    vCols: ["标的", "价差 F / J", "买入 $10k F / J", "买入 $100k F / J", "卖出 $10k F / J", "优势 买 $10k", "优势 买 $100k", "优势 卖 $10k"],
+    vSessTitle: "按交易时段汇总（所选历史区间）",
+    vSessCols: ["时段", "样本", "Fluxion 报价在线率", "优势中位数 买 $10k", "优势中位数 买 $100k", "优势中位数 卖 $10k", "Fluxion 胜率 买 $100k"],
+    vSess: { market_open: "盘中", pre_post: "盘前盘后", weekend: "周末" },
+    vChart: "Fluxion 相对 Jupiter 的优势（各标的中位数，bps）", vSerBuy: "买 $100k", vSerSell: "卖 $10k",
+    vNoData: "暂无数据", vNone: "暂无比价数据（等待下一轮运行）",
     group: {
       depth_min: n => `${n} 个池子 ±2% 深度低于阈值`, depth_drop: n => `${n} 个池子 ±2% 深度骤降`, tvl_drop: n => `${n} 个池子 TVL 骤降`,
       price_dev: n => `${n} 个池子价格偏离参考价`, lp_conc: n => `${n} 个池子由单一 LP 提供大部分流动性`,
@@ -295,6 +307,16 @@ const I18N = {
     rfqAdvantage: "RFQ vs AMM $10k impact", rfqAdvantageVal: "0.00% vs 15%+",
     rfqCols: ["Asset", "Tier", "RFQ Status", "SLA (from mid)", "Actual (mid)", "Spread", "SLA Status", "Ask ($1k)", "Bid ($1k)", "RFQ $10k", "RFQ $50k", "RFQ $100k", "AMM $10k Impact", "AMM vs RFQ Dev"],
     rfqStatusOk: "Online", rfqStatusNoQuote: c => `No quote (${c})`,
+    vTitle: "Cross-venue: Fluxion RFQ vs Solana (Jupiter)",
+    vDesc: "Executable quotes for the same xStock on Mantle (Fluxion RFQ) and Solana (Jupiter best route). Cost = bps vs the latest US stock trade (lower is better); advantage = bps Fluxion saves vs Jupiter (positive = Fluxion better). Solana prices are converted per share using the dividend multiplier.",
+    vWins: w => `Fluxion ${w.flux} / Jupiter ${w.jup} / tie ${w.tie}`,
+    vBuy10: "Better $10k buy", vBuy100: "Better $100k buy", vSell10: "Better $10k sell",
+    vCols: ["Asset", "Spread F / J", "Buy $10k F / J", "Buy $100k F / J", "Sell $10k F / J", "Adv. buy $10k", "Adv. buy $100k", "Adv. sell $10k"],
+    vSessTitle: "By trading session (selected range)",
+    vSessCols: ["Session", "Samples", "Fluxion quote uptime", "Median adv. buy $10k", "Median adv. buy $100k", "Median adv. sell $10k", "Fluxion win rate buy $100k"],
+    vSess: { market_open: "Market open", pre_post: "Pre/post", weekend: "Weekend" },
+    vChart: "Fluxion advantage vs Jupiter (median across assets, bps)", vSerBuy: "Buy $100k", vSerSell: "Sell $10k",
+    vNoData: "No data", vNone: "No comparison data yet (waiting for the next run).",
     group: {
       depth_min: n => `${n} pools have ±2% depth below threshold`, depth_drop: n => `${n} pools saw ±2% depth drop sharply`, tvl_drop: n => `${n} pools saw TVL drop sharply`,
       price_dev: n => `${n} pools deviate from reference price`, lp_conc: n => `${n} pools rely on a single LP for most liquidity`,
@@ -374,7 +396,7 @@ function render() {
     el("div", {}, T().updated, el("b", { text: ago(L.ts) }), age > 3600 ? el("span", { class: "stale", text: T().stale }) : ""),
     el("div", { text: T().block(L.block.toLocaleString(), L.eth_usd ? L.eth_usd.price.toFixed(2) : "–") }));
   if (!visible().some(p => p.pool === state.sel)) state.sel = (visible().slice().sort((a, b) => (b.tvl_usd || 0) - (a.tvl_usd || 0))[0] || {}).pool;
-  renderCoverage(); renderTiles(); renderAlerts(); renderLpMix(); renderRfq(); renderTable(); renderDetail();
+  renderCoverage(); renderTiles(); renderAlerts(); renderLpMix(); renderRfq(); renderVenue(); renderTable(); renderDetail();
 }
 
 function renderTiles() {
@@ -565,6 +587,69 @@ function renderRfq() {
     mini,
     el("div", { class: "tablewrap" }, t)
   );
+}
+
+const median = xs => { const v = xs.filter(x => x != null && isFinite(x)).sort((a, b) => a - b); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+const advTd = v => el("td", { class: v == null ? "" : v >= 1 ? "ok" : v <= -1 ? "neg" : "", text: v == null ? "–" : (v > 0 ? "+" : "") + v.toFixed(1) });
+function renderVenue() {
+  const box = $("#venue"), R = state.latest?.rfq;
+  if (!R || state.group === "weth" || !(state.dex === "all" || state.dex === "fluxion")) { box.hidden = true; return; }
+  box.hidden = false;
+  const kids = [el("h2", { text: T().vTitle }), el("p", { class: "desc", text: T().vDesc })];
+  const vs = R.venue_summary;
+  const items = (R.items || []).filter(it => it.venue);
+  if (!vs || !items.length) kids.push(el("div", { class: "empty", text: T().vNone }));
+  else {
+    kids.push(el("div", { class: "mini" }, ...[[T().vBuy10, vs.buy10], [T().vBuy100, vs.buy100], [T().vSell10, vs.sell10]].map(([k, w]) =>
+      el("div", {}, el("div", { class: "k", text: k }), el("div", { class: "v", text: `${w.flux} : ${w.jup}` }), el("div", { class: "k", text: T().vWins(w) })))));
+    const fmt = v => v == null ? "–" : v.toFixed(1);
+    const t = el("table");
+    t.append(el("thead", {}, el("tr", {}, ...T().vCols.map(x => el("th", { text: x })))));
+    const tb = el("tbody");
+    for (const it of items) {
+      const v = it.venue;
+      tb.append(el("tr", {}, el("td", { class: "pair", text: it.symbol, title: v.jup_route ? "Jupiter: " + v.jup_route : "" }),
+        ...[["f_spread", "j_spread"], ["f_buy10", "j_buy10"], ["f_buy100", "j_buy100"], ["f_sell10", "j_sell10"]].map(([a, b]) => el("td", { text: `${fmt(v[a])} / ${fmt(v[b])}` })),
+        advTd(v.buy_adv10), advTd(v.buy_adv100), advTd(v.sell_adv10)));
+    }
+    t.append(tb);
+    kids.push(el("div", { class: "tablewrap" }, t));
+  }
+  // 历史：按时段聚合 + 优势走势
+  const H = state.history?.rfq;
+  if (H && Object.keys(H.symbols || {}).length) {
+    const F = H.fields, ix = k => F.indexOf(k), cut = Date.now() / 1000 - state.range * 86400;
+    const rows = Object.values(H.symbols).flat().filter(r => r[0] >= cut);
+    const st = el("table");
+    st.append(el("thead", {}, el("tr", {}, ...T().vSessCols.map(x => el("th", { text: x })))));
+    const sb = el("tbody");
+    for (const sess of ["market_open", "pre_post", "weekend"]) {
+      const rs = rows.filter(r => r[ix("session")] === sess);
+      if (!rs.length) { sb.append(el("tr", {}, el("td", { text: T().vSess[sess] }), el("td", { text: "0" }), el("td", { colspan: 5, style: "color:var(--muted)", text: T().vNoData }))); continue; }
+      const col = k => rs.map(r => r[ix(k)]);
+      const up = col("f_quoted"), b100 = col("buy_adv100").filter(x => x != null);
+      sb.append(el("tr", {}, el("td", { text: T().vSess[sess] }), el("td", { text: rs.length.toLocaleString() }),
+        el("td", { text: pct(100 * up.reduce((a, b) => a + b, 0) / up.length, 1) }),
+        advTd(median(col("buy_adv10"))), advTd(median(col("buy_adv100"))), advTd(median(col("sell_adv10"))),
+        el("td", { text: b100.length ? pct(100 * b100.filter(x => x >= 1).length / b100.length, 0) : "–" })));
+    }
+    st.append(sb);
+    kids.push(el("h2", { text: T().vSessTitle, style: "margin-top:16px" }), el("div", { class: "tablewrap" }, st));
+    const byTs = new Map();
+    for (const r of rows) { if (!byTs.has(r[0])) byTs.set(r[0], []); byTs.get(r[0]).push(r); }
+    const xs = [...byTs.keys()].sort((a, b) => a - b);
+    if (xs.length >= 2) {
+      const ser = [{ name: T().vSerBuy, color: css("--s1"), ys: xs.map(x => median(byTs.get(x).map(r => r[ix("buy_adv100")]))) },
+                   { name: T().vSerSell, color: css("--s2"), ys: xs.map(x => median(byTs.get(x).map(r => r[ix("sell_adv10")]))) }];
+      const c = el("div", { class: "chart" });
+      kids.push(el("h2", { text: T().vChart, style: "margin-top:16px" }),
+        el("div", { class: "legend" }, ...ser.map(x => el("span", {}, el("i", { class: "ln", style: `background:${x.color}` }), x.name))), c);
+      const xticks = xsv => { const out = []; for (let i = 0; i < 4; i++) { const v = xsv[0] + (xsv[xsv.length - 1] - xsv[0]) * i / 3; const label = tfmt(v, state.range); if (!out.length || out[out.length - 1].label !== label) out.push({ v, label }); } return out; };
+      const xlabel = v => new Date(v * 1000).toLocaleString(T().locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      requestAnimationFrame(() => lineChart(c, ser, xs, { h: 200, yfmt: v => v == null ? "–" : v.toFixed(0), xticks, xlabel }));
+    }
+  }
+  box.replaceChildren(...kids);
 }
 
 const COLS = [

@@ -9,6 +9,7 @@ from pathlib import Path
 from . import chain
 from .alerts import evaluate, message_zh
 from . import lb
+from . import venue
 from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sweep_pools, sync_events, sync_pools, sync_positions
@@ -348,6 +349,14 @@ def run(args):
             "items": rfq_items
         }
 
+        # ---- 跨链比价：同一 xStock 在 Solana（Jupiter）上的可成交报价
+        if cfg.get("venue_compare", {}).get("enabled", True) and not getattr(args, "skip_venue", False):
+            try:
+                rfq_data["venue_summary"] = venue.run(store, rfq_items, cfg, session_info, now)
+            except Exception as e:
+                print("venue compare failed:", e)
+        store.save_rfq_snapshot(now, {it["symbol"]: venue.history_row(it, session_info["session"]) for it in rfq_items})
+
     # ---- 告警（去重：仅新触发 / 恢复时推送）
     a = cfg["alerts"]
     fired = {}
@@ -473,6 +482,27 @@ def render_md(rep):
             amm_imp = _f(amm.get("impact_10k_buy"), "{:.2f}%", "流动性不足") if amm else "-"
             amm_dev = _f(amm.get("dev_pct"), "{:+.2f}%") if amm else "-"
             md.append(f"| {it['symbol']} | {tier} | {stat} | {bm} | {mid_bps} | {sp} | {sla_text} | {ask} | {bid} | {b10} | {b50} | {b100} | {amm_imp} | {amm_dev} |")
+    vs = (rep.get("rfq") or {}).get("venue_summary")
+    if vs:
+        w = lambda k: f"Fluxion {vs[k]['flux']} / Jupiter {vs[k]['jup']} / 持平 {vs[k]['tie']}"
+        md += [
+            "",
+            "## 跨链比价：Fluxion RFQ vs Solana（Jupiter）",
+            "",
+            "成本单位 bps，相对美股最新成交价（越低越好）；优势 = Fluxion 相对 Jupiter 省多少（正 = Fluxion 更优）。Solana 价格已按 Scaled UI multiplier 换算成每股。",
+            "",
+            f"- **$10k 买入更优**：{w('buy10')}；**$100k 买入更优**：{w('buy100')}；**$10k 卖出更优**：{w('sell10')}",
+            "",
+            "| 标的 | 价差 F / J | 买入 $10k F / J | 买入 $100k F / J | 卖出 $10k F / J | 优势 买$10k | 优势 买$100k | 优势 卖$10k |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        pair = lambda v, a, b: f"{_f(v.get(a), '{:.1f}')} / {_f(v.get(b), '{:.1f}')}"
+        for it in rep["rfq"]["items"]:
+            v = it.get("venue")
+            if not v:
+                continue
+            md.append(f"| {it['symbol']} | {pair(v, 'f_spread', 'j_spread')} | {pair(v, 'f_buy10', 'j_buy10')} | {pair(v, 'f_buy100', 'j_buy100')} | "
+                      f"{pair(v, 'f_sell10', 'j_sell10')} | {_f(v.get('buy_adv10'), '{:+.1f}')} | {_f(v.get('buy_adv100'), '{:+.1f}')} | {_f(v.get('sell_adv10'), '{:+.1f}')} |")
     md += ["", "## 当前告警", ""] + [f"- **{a['severity']}** {a['message']}" for a in rep["alerts"]]
     return "\n".join(md) + "\n"
 
@@ -482,6 +512,7 @@ def main():
     ap.add_argument("--no-notify", action="store_true", help="不推送飞书 webhook")
     ap.add_argument("--skip-positions", action="store_true", help="跳过 LP 持仓同步（首次全量较慢）")
     ap.add_argument("--skip-rfq-depth", action="store_true", help="跳过 RFQ 多档深度探测")
+    ap.add_argument("--skip-venue", action="store_true", help="跳过 Solana（Jupiter）跨链比价")
     run(ap.parse_args())
 
 

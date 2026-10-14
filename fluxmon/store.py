@@ -3,6 +3,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from .venue import HISTORY_FIELDS as RFQ_FIELDS
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS pools (pool TEXT PRIMARY KEY, token0 TEXT, token1 TEXT, fee INT, tick_spacing INT, block INT,
@@ -14,6 +16,7 @@ CREATE INDEX IF NOT EXISTS events_block ON events(block);
 CREATE TABLE IF NOT EXISTS positions (npm TEXT, id INT, pool TEXT, owner TEXT, tick_lower INT, tick_upper INT, liquidity TEXT,
   PRIMARY KEY (npm, id));
 CREATE TABLE IF NOT EXISTS snapshots (ts INT, block INT, pool TEXT, data TEXT, PRIMARY KEY (ts, pool));
+CREATE TABLE IF NOT EXISTS rfq_snapshots (ts INT, symbol TEXT, data TEXT, PRIMARY KEY (ts, symbol));
 CREATE TABLE IF NOT EXISTS alerts (key TEXT PRIMARY KEY, severity TEXT, message TEXT, first_ts INT, last_ts INT, active INT);
 """
 
@@ -101,7 +104,17 @@ class Store:
             d = json.loads(data)
             out.setdefault(pool, {"pair": d.get("pair"), "fee_pct": d.get("fee_pct"), "rows": []})["rows"].append(
                 [ts] + [d.get(k) for k in HISTORY_FIELDS])
-        return {"fields": ["ts"] + HISTORY_FIELDS, "pools": out}
+        rfq = {}
+        for ts, sym, data in self.db.execute("SELECT ts, symbol, data FROM rfq_snapshots ORDER BY ts"):
+            rfq.setdefault(sym, []).append([ts] + json.loads(data))
+        return {"fields": ["ts"] + HISTORY_FIELDS, "pools": out, "rfq": {"fields": ["ts"] + RFQ_FIELDS, "symbols": rfq}}
+
+    def save_rfq_snapshot(self, ts, rows, keep_days=30):
+        """rows: {symbol: [按 RFQ_FIELDS 排列的值]}"""
+        self.db.executemany("INSERT OR REPLACE INTO rfq_snapshots VALUES (?,?,?)",
+                            [(ts, sym, json.dumps(v)) for sym, v in rows.items()])
+        self.db.execute("DELETE FROM rfq_snapshots WHERE ts<?", (ts - keep_days * 86400,))
+        self.db.commit()
 
     def import_history(self, hist):
         """把线上看板的 history.json 合并回本地（CI 环境缓存丢失时用来续接历史）。"""
@@ -114,6 +127,11 @@ class Store:
                          depth={"2": {"up": d.get("depth2_up"), "down": d.get("depth2_down")}})
                 rows.append((row[0], 0, pool, json.dumps(d)))
         self.db.executemany("INSERT OR IGNORE INTO snapshots VALUES (?,?,?,?)", rows)
+        rq = hist.get("rfq") or {}
+        if rq.get("fields", [])[1:] == RFQ_FIELDS:
+            rrows = [(r[0], sym, json.dumps(r[1:])) for sym, rs in rq.get("symbols", {}).items() for r in rs]
+            self.db.executemany("INSERT OR IGNORE INTO rfq_snapshots VALUES (?,?,?)", rrows)
+            rows += rrows
         self.db.commit()
         return len(rows)
 

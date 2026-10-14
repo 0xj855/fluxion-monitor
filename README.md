@@ -24,9 +24,10 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 2. **读池子状态**：Multicall3 一次性读 `slot0`、`liquidity`、全部 `tickBitmap` 与已初始化 tick 的 `liquidityNet`。
 3. **计算指标**（美元口径，见下表）。
 4. **RFQ 深度探测**：对主流 xStocks（SOW 10 个指定标的）向 Fluxion RFQ 接口探测双向做市报价、买卖价差（Spread）及多档买卖深度（$1k / $10k / $50k / $100k），并与链上 AMM 冲击横向对比。
-5. **同步事件**：Swap / Mint / Burn 增量入库 → 24h / 7d 成交、费率 APR、大额撤出。
-6. **LP 集中度**：扫描 NonfungiblePositionManager 的持仓 NFT → 每个池子在区间内流动性的持有人分布、主要头寸距区间边界的距离。
-7. **告警**：按 `config/config.json` 阈值判定，按 key 去重，只在新触发 / 恢复时推送。
+5. **跨链比价**：对上述标的同时向 Solana 上的 Jupiter 聚合器询价（$10k / $100k 买入、$10k 卖出），并取标的美股最新成交价（Yahoo，含盘前盘后），计算两边相对美股的成本和 Fluxion 相对 Jupiter 的优势；Solana 价格按 Token-2022 Scaled UI multiplier（股息再投资）换算成每股。逐轮写入历史，看板按交易时段（盘中 / 盘前盘后 / 周末）汇总报价在线率与优势中位数。`--skip-venue` 可跳过。
+6. **同步事件**：Swap / Mint / Burn 增量入库 → 24h / 7d 成交、费率 APR、大额撤出。
+7. **LP 集中度**：扫描 NonfungiblePositionManager 的持仓 NFT → 每个池子在区间内流动性的持有人分布、主要头寸距区间边界的距离。
+8. **告警**：按 `config/config.json` 阈值判定，按 key 去重，只在新触发 / 恢复时推送。
 
 ## 指标口径
 
@@ -38,6 +39,7 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 | RFQ 价格深度与滑点 | 探测 RFQ 在 $1k / $10k / $50k / $100k 规模下的买入/卖出报价、买卖双向价差（bps）及承接滑点 |
 | 偏离参考价 | WETH：对 Binance/Coinbase 均价；xStocks：对 Fluxion RFQ `rawPrice`（无报价时用 1 分钟 K 线收盘价，超过 15 分钟视为过期不告警），并按包装币 `convertToAssets` 换算 |
 | Top1 LP | 当前在区间内的流动性中，单一地址的占比 |
+| 跨链比价成本 | 买入 = 成交价高于美股价的 bps，卖出 = 成交价低于美股价的 bps；优势 = Fluxion 比 Jupiter 省多少 bps（正 = Fluxion 更优，不依赖美股参考价）。Yahoo 不可用时只保留优势列 |
 
 ## 告警规则（`config/config.json → alerts`）
 

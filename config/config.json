@@ -83,6 +83,10 @@
     ],
     "delay_s": 1.05
   },
+  "venue_compare": {
+    "enabled": true,
+    "delay_s": 1.1
+  },
   "rfq_sla": {
     "tiers": {
       "TSLAx": "Tier 1",

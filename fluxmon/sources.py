@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
@@ -12,6 +13,12 @@ XSTOCKS_API = "https://api.backed.fi/api/v1/token"
 RFQ_URL = "https://fluxion-proxy-api-production.up.railway.app/quote"   # 限速 60 次/分钟
 KLINE_URL = "https://fluxion.network/api/xstocks/kline"
 USPX_KLINE_URL = "https://fluxion.network/api/xstocks/uspx-kline"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{}?interval=1m&range=1d&includePrePost=true"
+JUP_QUOTE_URL = "https://lite-api.jup.ag/swap/v1/quote"
+SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+SOL_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+SOL_XSTOCK_DECIMALS = 8
+_catalog_payload = None
 
 
 def http(url, body=None, timeout=20):
@@ -33,9 +40,11 @@ def http(url, body=None, timeout=20):
 
 def xstocks_catalog():
     """Mantle 上的 xStocks：{address(lower): {symbol, native, kind: native|wrapper}}"""
+    global _catalog_payload
     status, payload = http(XSTOCKS_API, timeout=30)
     if status != 200 or not isinstance(payload, dict):
         raise RuntimeError(f"xStocks catalog unavailable: HTTP {status}")
+    _catalog_payload = payload
     out = {}
     for a in payload.get("nodes", []):
         sym = a.get("symbol") or ""
@@ -50,6 +59,58 @@ def xstocks_catalog():
                 if d.get(k):
                     out[d[k].lower()] = {"symbol": sym, "native": native, "kind": "wrapper"}
     return out
+
+
+def xstocks_solana():
+    """Solana 上的 xStocks：{symbol: {mint, underlying}}（复用 xstocks_catalog 拉到的清单）。"""
+    payload = _catalog_payload
+    if payload is None:
+        _, payload = http(XSTOCKS_API, timeout=30)
+    out = {}
+    for a in (payload or {}).get("nodes", []):
+        for d in a.get("deployments") or []:
+            if d.get("network") == "Solana" and d.get("address"):
+                out[a["symbol"]] = {"mint": d["address"].removeprefix("svm:"), "underlying": a.get("underlyingSymbol")}
+    return out
+
+
+def underlying_price(ticker):
+    """美股标的最新成交价（Yahoo 1 分钟线，含盘前盘后）：{price, ts}；失败返回 None。"""
+    s, j = http(YAHOO_CHART_URL.format(ticker))
+    try:
+        r = j["chart"]["result"][0]
+        pts = [(t, c) for t, c in zip(r.get("timestamp") or [], r["indicators"]["quote"][0].get("close") or []) if c]
+        if pts:
+            return {"price": pts[-1][1], "ts": pts[-1][0]}
+        return {"price": r["meta"]["regularMarketPrice"], "ts": r["meta"].get("regularMarketTime")}
+    except Exception:
+        return None
+
+
+def solana_multiplier(mint, now=None):
+    """Token-2022 Scaled UI Amount 的当前 multiplier（1 原始单位 = multiplier 股，用于股息再投资）。"""
+    body = {"jsonrpc": "2.0", "id": 1, "method": "getAccountInfo", "params": [mint, {"encoding": "jsonParsed"}]}
+    s, j = http(SOLANA_RPC_URL, body)
+    try:
+        exts = j["result"]["value"]["data"]["parsed"]["info"].get("extensions") or []
+    except Exception:
+        return None
+    for e in exts:
+        if e.get("extension") == "scaledUiAmountConfig":
+            st = e["state"]
+            if (now or time.time()) >= int(st.get("newMultiplierEffectiveTimestamp") or 0):
+                return float(st["newMultiplier"])
+            return float(st["multiplier"])
+    return 1.0
+
+
+def jupiter_quote(input_mint, output_mint, amount_raw, slippage_bps=100):
+    """Jupiter 聚合器 exact-in 报价：{out, route}；无路由返回 None。"""
+    q = urllib.parse.urlencode({"inputMint": input_mint, "outputMint": output_mint, "amount": int(amount_raw), "slippageBps": slippage_bps})
+    s, j = http(f"{JUP_QUOTE_URL}?{q}")
+    if s != 200 or not isinstance(j, dict) or not j.get("outAmount"):
+        return None
+    return {"out": int(j["outAmount"]), "route": "+".join(r["swapInfo"]["label"] for r in j.get("routePlan", []))}
 
 
 def eth_usd():
