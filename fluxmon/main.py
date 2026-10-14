@@ -9,7 +9,7 @@ from pathlib import Path
 from . import chain
 from .alerts import evaluate, message_zh
 from . import lb
-from . import venue
+from . import flows, venue
 from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sweep_pools, sync_events, sync_pools, sync_positions
@@ -357,6 +357,21 @@ def run(args):
                 print("venue compare failed:", e)
         store.save_rfq_snapshot(now, {it["symbol"]: venue.history_row(it, session_info["session"]) for it in rfq_items})
 
+    # ---- xStocks 流通量与交易所充提
+    flow_data = None
+    fcfg = cfg.get("flows", {})
+    if fcfg.get("enabled", True):
+        try:
+            syms = cfg.get("designated", {}).get("pairs") or []
+            natives = {info["symbol"]: a for a, info in xcat.items() if info["kind"] == "native" and info["symbol"] in syms}
+            prices = {s: (refs.get(s) or {}).get("price") for s in natives}
+            for it in (rfq_data or {}).get("items", []):
+                prices[it["symbol"]] = prices.get(it["symbol"]) or it.get("mid_price")
+            print("xfers synced:", flows.sync(store, natives, head))
+            flow_data = flows.summarize(store, natives, fcfg.get("labels", {}), prices, head, now)
+        except Exception as e:
+            print("flows failed:", e)
+
     # ---- 告警（去重：仅新触发 / 恢复时推送）
     a = cfg["alerts"]
     fired = {}
@@ -380,7 +395,7 @@ def run(args):
         r.pop("_val", None)
     store.save_snapshot(now, head, rows)
 
-    report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows, "designated": designated, "rfq": rfq_data, "lp_labels": labels,
+    report = {"ts": now, "block": head, "eth_usd": eth, "pools": rows, "designated": designated, "rfq": rfq_data, "flows": flow_data, "lp_labels": labels,
               "dexes": [{"id": d["id"], "name": d["name"], "type": d["type"],
                          "pools_tracked": sum(1 for p in pools if p["dex"] == d["id"]),
                          "pools_shown": sum(1 for r in rows if r["dex"] == d["id"])} for d in dexes.values()],
@@ -503,6 +518,16 @@ def render_md(rep):
                 continue
             md.append(f"| {it['symbol']} | {pair(v, 'f_spread', 'j_spread')} | {pair(v, 'f_buy10', 'j_buy10')} | {pair(v, 'f_buy100', 'j_buy100')} | "
                       f"{pair(v, 'f_sell10', 'j_sell10')} | {_f(v.get('buy_adv10'), '{:+.1f}')} | {_f(v.get('buy_adv100'), '{:+.1f}')} | {_f(v.get('sell_adv10'), '{:+.1f}')} |")
+    fl = rep.get("flows")
+    if fl:
+        t = fl["totals"]
+        md += ["", "## xStocks 流通量与 Bybit 充提", "",
+               f"- **总供应** ${t['supply_usd']:,.0f}，其中发行方库存 ${t['issuer_usd']:,.0f}，**流通** ${t['circulating_usd']:,.0f}"
+               f"（交易所钱包 ${t['exchange_usd']:,.0f}，链上用户与合约 ${t['onchain_usd']:,.0f}）", "",
+               "| 窗口 | 提现（交易所→链上） | 充值（链上→交易所） | 净流入链上 | 链上转账总额 |", "|---|---|---|---|---|"]
+        for k, w in fl["windows"].items():
+            md.append(f"| {k} | ${w['wd_usd']:,.0f}（{w['wd_n']} 笔 / {w['wd_addrs']} 地址） | ${w['dp_usd']:,.0f}（{w['dp_n']} 笔 / {w['dp_addrs']} 地址） | "
+                      f"${w['net_usd']:+,.0f} | ${w['xfer_usd']:,.0f} |")
     md += ["", "## 当前告警", ""] + [f"- **{a['severity']}** {a['message']}" for a in rep["alerts"]]
     return "\n".join(md) + "\n"
 

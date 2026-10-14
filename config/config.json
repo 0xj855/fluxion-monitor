@@ -83,6 +83,17 @@
     ],
     "delay_s": 1.05
   },
+  "flows": {
+    "enabled": true,
+    "labels": {
+      "0x588846213a30fd36244e0ae0ebb2374516da836c": {"name": "Bybit: Wallet 119", "kind": "exchange"},
+      "0x4a67e97e770de93952b8596f04c13ada0ab9a69c": {"name": "Bybit: Wallet 118", "kind": "exchange"},
+      "0xc868d0ea71243f1580f934cdc59620603bf9f1f1": {"name": "Bybit: Wallet 121", "kind": "exchange"},
+      "0xd8169f099ce16c87a99d2a8494023574b5eea9c5": {"name": "Bybit: Wallet 123", "kind": "exchange"},
+      "0x0d4dc3b8becc98782309e443a6da4b9455b5ca48": {"name": "Bybit 9", "kind": "exchange"},
+      "0x5f7a4c11bde4f218f0025ef444c369d838ffa2ad": {"name": "Backed: Deployer", "kind": "issuer"}
+    }
+  },
   "venue_compare": {
     "enabled": true,
     "delay_s": 1.1

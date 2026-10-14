@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS positions (npm TEXT, id INT, pool TEXT, owner TEXT, t
   PRIMARY KEY (npm, id));
 CREATE TABLE IF NOT EXISTS snapshots (ts INT, block INT, pool TEXT, data TEXT, PRIMARY KEY (ts, pool));
 CREATE TABLE IF NOT EXISTS rfq_snapshots (ts INT, symbol TEXT, data TEXT, PRIMARY KEY (ts, symbol));
+CREATE TABLE IF NOT EXISTS xfers (block INT, log_index INT, symbol TEXT, src TEXT, dst TEXT, amount REAL,
+  PRIMARY KEY (block, log_index));
 CREATE TABLE IF NOT EXISTS alerts (key TEXT PRIMARY KEY, severity TEXT, message TEXT, first_ts INT, last_ts INT, active INT);
 """
 
@@ -134,6 +136,17 @@ class Store:
             rows += rrows
         self.db.commit()
         return len(rows)
+
+    def add_xfers(self, rows):
+        self.db.executemany("INSERT OR IGNORE INTO xfers VALUES (?,?,?,?,?,?)", rows)
+        self.db.commit()
+
+    def xfers_since(self, block):
+        return self.db.execute("SELECT block, symbol, src, dst, amount FROM xfers WHERE block>=? ORDER BY block", (block,)).fetchall()
+
+    def prune_xfers(self, before_block):
+        self.db.execute("DELETE FROM xfers WHERE block<?", (before_block,))
+        self.db.commit()
 
     def previous_snapshot(self, pool, before_ts, min_age_s=0):
         row = self.db.execute("SELECT data FROM snapshots WHERE pool=? AND ts<=? ORDER BY ts DESC LIMIT 1",
