@@ -9,7 +9,7 @@ from pathlib import Path
 from . import chain
 from .alerts import evaluate, message_zh
 from . import lb
-from . import flows, venue
+from . import flows, mailer, venue
 from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sweep_pools, sync_events, sync_pools, sync_positions
@@ -410,6 +410,11 @@ def run(args):
         print("\n".join(["", "== 告警变化 =="] + new_lines + resolved_lines))
         if not args.no_notify:
             notify(cfg, new_lines + resolved_lines)
+    if not args.no_notify and mailer.configured():
+        ecfg = cfg.get("email", {})
+        mailer.critical_alerts(store, fired, now, ecfg)
+        if args.daily_now or mailer.daily_due(store, now, ecfg):
+            mailer.daily_report(store, report, now, ecfg)
 
 
 def _f(v, fmt="{:,.0f}", none="-"):
@@ -534,10 +539,11 @@ def render_md(rep):
 
 def main():
     ap = argparse.ArgumentParser(description="Fluxion AMM 流动性质量监控（xStocks / WETH）")
-    ap.add_argument("--no-notify", action="store_true", help="不推送飞书 webhook")
+    ap.add_argument("--no-notify", action="store_true", help="不推送飞书 webhook / 邮件")
     ap.add_argument("--skip-positions", action="store_true", help="跳过 LP 持仓同步（首次全量较慢）")
     ap.add_argument("--skip-rfq-depth", action="store_true", help="跳过 RFQ 多档深度探测")
     ap.add_argument("--skip-venue", action="store_true", help="跳过 Solana（Jupiter）跨链比价")
+    ap.add_argument("--daily-now", action="store_true", help="立即发送邮件日报（忽略发送时间）")
     run(ap.parse_args())
 
 

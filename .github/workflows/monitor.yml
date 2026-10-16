@@ -40,6 +40,11 @@ jobs:
       - name: Run monitor
         env:
           FLUXMON_LARK_WEBHOOK: ${{ secrets.FLUXMON_LARK_WEBHOOK }}
+          # 邮件（Resend）：只发 critical（按 key 去重）+ 每日日报；未设置 API key / EMAIL_TO 时不发
+          FLUXMON_RESEND_API_KEY: ${{ secrets.FLUXMON_RESEND_API_KEY }}
+          FLUXMON_EMAIL_TO: ${{ secrets.FLUXMON_EMAIL_TO }}
+          FLUXMON_EMAIL_FROM: ${{ secrets.FLUXMON_EMAIL_FROM }}
+          FLUXMON_DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           # 历史序列以线上看板为准，缓存丢失时从这里续接
           FLUXMON_HISTORY_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/history.json
         run: python -m fluxmon.main

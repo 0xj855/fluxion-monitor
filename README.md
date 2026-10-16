@@ -81,5 +81,9 @@ xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deploym
 - 看板读取 `data/latest.json`（当前快照，含 ±30% 流动性分布、累积深度曲线、LP 头寸）和 `data/history.json`（30 天时间序列）。
 - SQLite 状态通过 Actions cache 续接；缓存丢失时用 `config/pools_seed.json` 跳过池子全量扫描，并从线上 `history.json` 续接历史。
 - 飞书推送：在仓库 Settings → Secrets → Actions 添加 `FLUXMON_LARK_WEBHOOK`（自定义机器人 webhook 地址）。
+- 邮件通知（[Resend](https://resend.com)，免费额度每天 100 封）：添加 Secrets `FLUXMON_RESEND_API_KEY`、`FLUXMON_EMAIL_TO`（逗号分隔）。可选 `FLUXMON_EMAIL_FROM`，默认 `onboarding@resend.dev`，此时只能发到 Resend 注册邮箱；要发给其他人需先在 Resend 验证发信域名，再把 FROM 设为该域名下的地址。
+  - **只发 critical**：同一告警 key 只发一次；持续存在、或消失不足 24h（`email.critical_quiet_s`）又重新触发都不会重复发；恢复不单独发邮件。同一轮的多条新告警合并成一封。
+  - **每日日报**：每天 UTC `email.daily_hour_utc` 点（默认 1 点 = 北京时间 9 点）之后的第一轮发送一封，含当前告警、过去 24h 已恢复告警、TVL 前 20 池子、RFQ 与 xStocks 充提概况。`--daily-now` 可立即发送一封测试。
+  - 去重状态存在 SQLite 里；Actions cache 丢失时可能重发一次当前仍在的 critical。
 
 本地预览：`./run.sh --no-notify && mkdir -p _site/data && cp site/index.html _site/ && cp data/reports/*.json _site/data/ && python3 -m http.server -d _site 8000`

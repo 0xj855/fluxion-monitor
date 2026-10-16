@@ -167,3 +167,7 @@ class Store:
     def resolve_alert(self, key, ts):
         self.db.execute("UPDATE alerts SET active=0, last_ts=? WHERE key=?", (ts, key))
         self.db.commit()
+
+    def alerts_since(self, ts):
+        cols = ("key", "severity", "message", "first_ts", "last_ts", "active")
+        return [dict(zip(cols, r)) for r in self.db.execute("SELECT * FROM alerts WHERE last_ts>=? ORDER BY first_ts", (ts,))]

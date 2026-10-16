@@ -147,6 +147,11 @@
     "large_burn_tvl_pct": 10
   },
   "lark_webhook_env": "FLUXMON_LARK_WEBHOOK",
+  "email": {
+    "critical_quiet_s": 86400,
+    "daily_hour_utc": 1,
+    "daily_max_pools": 20
+  },
   "designated": {
     "pairs": [
       "TSLAx",
