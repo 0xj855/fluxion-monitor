@@ -16,7 +16,7 @@ import time
 import urllib.error
 import urllib.request
 
-SUBJECT = "Mantle DEX 流动性监控"
+SUBJECT = "Mantle 流动性监控"
 
 
 def configured():
@@ -25,7 +25,7 @@ def configured():
 
 def send(subject, html_body, text_body):
     env = os.environ
-    body = {"from": env.get("FLUXMON_EMAIL_FROM") or "Fluxion Monitor <onboarding@resend.dev>",
+    body = {"from": env.get("FLUXMON_EMAIL_FROM") or "Mantle Liquidity Monitor <onboarding@resend.dev>",
             "to": [x.strip() for x in env["FLUXMON_EMAIL_TO"].split(",") if x.strip()],
             "subject": subject, "html": html_body, "text": text_body}
     req = urllib.request.Request("https://api.resend.com/emails", json.dumps(body).encode(), {

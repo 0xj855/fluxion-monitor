@@ -1,4 +1,4 @@
-name = "fluxmon-cron"
+name = "mantle-liquidity-monitor-cron"
 main = "worker.js"
 compatibility_date = "2026-09-01"
 
@@ -6,6 +6,6 @@ compatibility_date = "2026-09-01"
 crons = ["*/5 * * * *"]
 
 [vars]
-REPO = "0xj855/fluxion-monitor"
+REPO = "0xj855/mantle-liquidity-monitor"
 WORKFLOW = "monitor.yml"
 REF = "main"

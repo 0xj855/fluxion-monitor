@@ -1,9 +1,9 @@
-# Mantle DEX 流动性监控（fluxion-monitor）
+# Mantle 流动性监控（mantle-liquidity-monitor）
 
 监控 Mantle 上 **Fluxion V3**（xStocks + WETH）、**Merchant Moe Liquidity Book**（xStocks）、**Agni V3**（xStocks）池子的流动性质量。**零第三方依赖**，Python 3.11+ 直接运行，数据全部来自链上（公共 RPC）+ Fluxion RFQ / K 线 + CEX 价格。
 
 ```bash
-cd fluxion-monitor
+cd mantle-liquidity-monitor
 python3 -m fluxmon.main --no-notify        # 跑一次，只打印不推送
 FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh   # 有新告警时推送到飞书群
 ```

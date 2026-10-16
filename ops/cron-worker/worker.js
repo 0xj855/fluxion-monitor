@@ -12,7 +12,7 @@ export default {
           authorization: `Bearer ${env.GH_TOKEN}`,
           accept: "application/vnd.github+json",
           "x-github-api-version": "2022-11-28",
-          "user-agent": "fluxmon-cron",
+          "user-agent": "mantle-liquidity-monitor-cron",
         },
         body: JSON.stringify({ ref: env.REF }),
       },

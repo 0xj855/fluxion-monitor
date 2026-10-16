@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mantle DEX Liquidity Monitor</title>
+<title>Mantle Liquidity Monitor</title>
 <meta name="description" content="Liquidity quality of xStocks and WETH pools on Fluxion V3 AMM (Mantle): depth, distribution, price impact, price deviation, LP concentration.">
 <style>
 :root{
@@ -129,7 +129,7 @@ footer code{font-size:11.5px}
 <div class="wrap">
   <header>
     <div>
-      <h1 data-i18n="title">Mantle DEX 流动性监控</h1>
+      <h1 data-i18n="title">Mantle 流动性监控</h1>
       <div class="sub" data-i18n="subtitle">Mantle · Fluxion V3 AMM · xStocks 与 WETH 池</div>
     </div>
     <div class="head-r">
@@ -200,7 +200,7 @@ const EXPLORER = "https://mantlescan.xyz/address/";
 // ---------- i18n ----------
 const I18N = {
   zh: {
-    title: "Mantle DEX 流动性监控", subtitle: "Fluxion · Merchant Moe · Agni — xStocks 与 WETH 池", docTitle: "Mantle DEX 流动性监控",
+    title: "Mantle 流动性监控", subtitle: "Fluxion · Merchant Moe · Agni — xStocks 与 WETH 池", docTitle: "Mantle 流动性监控",
     cover: (n, s) => `${n}：${s} 个池子`, coverNone: n => `${n}：暂无 xStocks 池（每日检查）`, coverSmall: (s, t) => `（另有 ${t - s} 个 TVL < $1,000 未显示）`, cDex: "DEX",
     lbHolders: "按地址汇总的持仓（Liquidity Book 没有价格区间头寸，按 bin 份额折算）", lbCols: ["LP 地址", "持仓价值", "占池 TVL"], lpNoneAgni: "该 DEX 暂不统计 LP 构成",
     filters: "筛选", asset: "资产", all: "全部", range: "历史区间", r24h: "24 小时", r7d: "7 天", r30d: "30 天",
@@ -277,7 +277,7 @@ const I18N = {
     },
   },
   en: {
-    title: "Mantle DEX Liquidity Monitor", subtitle: "Fluxion · Merchant Moe · Agni — xStocks & WETH pools", docTitle: "Mantle DEX Liquidity Monitor",
+    title: "Mantle Liquidity Monitor", subtitle: "Fluxion · Merchant Moe · Agni — xStocks & WETH pools", docTitle: "Mantle Liquidity Monitor",
     cover: (n, s) => `${n}: ${s} pools`, coverNone: n => `${n}: no xStocks pools yet (checked daily)`, coverSmall: (s, t) => ` (${t - s} more under $1,000 TVL hidden)`, cDex: "DEX",
     lbHolders: "Holdings by address (Liquidity Book has no range positions; valued by bin shares)", lbCols: ["LP address", "Value", "Share of pool TVL"], lpNoneAgni: "LP breakdown not tracked for this DEX",
     filters: "Filters", asset: "Asset", all: "All", range: "History", r24h: "24h", r7d: "7d", r30d: "30d",

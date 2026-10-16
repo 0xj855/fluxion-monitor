@@ -120,7 +120,7 @@ def notify(cfg, lines):
     if not hook or not lines:
         return
     link = f"\n看板：{os.environ['FLUXMON_DASHBOARD_URL']}" if os.environ.get("FLUXMON_DASHBOARD_URL") else ""
-    body = json.dumps({"msg_type": "text", "content": {"text": "【Mantle DEX 流动性监控】\n" + "\n".join(lines) + link}}).encode()
+    body = json.dumps({"msg_type": "text", "content": {"text": "【Mantle 流动性监控】\n" + "\n".join(lines) + link}}).encode()
     try:
         urllib.request.urlopen(urllib.request.Request(hook, body, {"content-type": "application/json"}), timeout=15)
     except Exception as e:
@@ -445,7 +445,7 @@ def _f(v, fmt="{:,.0f}", none="-"):
 
 
 def render_console(rep):
-    lines = [f"Mantle DEX 流动性快照  block {rep['block']}  ETH(CEX) ${_f((rep['eth_usd'] or {}).get('price'), '{:,.2f}')}",
+    lines = [f"Mantle 流动性快照  block {rep['block']}  ETH(CEX) ${_f((rep['eth_usd'] or {}).get('price'), '{:,.2f}')}",
              f"{'DEX':<14}{'池子':<22}{'费率':>6}{'TVL':>13}{'±2%上':>10}{'±2%下':>10}{'±10%内占比':>11}{'$10k买冲击':>11}{'24h量':>11}{'偏离':>8}{'Top1 LP':>9}"]
     for r in sorted(rep["pools"], key=lambda r: -(r["tvl_usd"] or 0)):
         d2 = r["depth"].get("2", {})
@@ -481,7 +481,7 @@ def render_console(rep):
 
 def render_md(rep):
     ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(rep["ts"]))
-    md = [f"# Mantle DEX 流动性快照（{ts}）", "",
+    md = [f"# Mantle 流动性快照（{ts}）", "",
           f"区块 {rep['block']}，ETH 参考价（CEX）${_f((rep['eth_usd'] or {}).get('price'), '{:,.2f}')}", "",
           "| DEX | 池子 | 费率 | TVL | ±2% 上 | ±2% 下 | ±10% 内占 TVL | $10k 买入冲击 | 24h 成交 | 7d 费率 APR | 偏离参考价 | Top1 LP |",
           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -561,7 +561,7 @@ def render_md(rep):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Fluxion AMM 流动性质量监控（xStocks / WETH）")
+    ap = argparse.ArgumentParser(description="Mantle 流动性监控（DEX 池子 / RFQ / 跨链比价 / xStocks 充提）")
     ap.add_argument("--no-notify", action="store_true", help="不推送飞书 webhook / 邮件")
     ap.add_argument("--skip-positions", action="store_true", help="跳过 LP 持仓同步（首次全量较慢）")
     ap.add_argument("--skip-rfq-depth", action="store_true", help="跳过 RFQ 多档深度探测")
