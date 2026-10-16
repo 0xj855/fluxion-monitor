@@ -79,6 +79,7 @@ xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deploym
 
 - **触发频率**：GitHub 对公开仓库的 `schedule` 会大幅降频（实测 4–5 小时一次），只作兜底。真正的 5 分钟节奏由 `ops/cron-worker`（Cloudflare Worker Cron Trigger）调用 `workflow_dispatch` 提供，部署方法见 `ops/cron-worker/worker.js` 顶部注释。
 - **站点地址**：仓库变量 `FLUXMON_SITE_URL`（如 `https://malerts.app/`，以 `/` 结尾），邮件中的看板链接与缓存丢失时的历史续接都以它为准；未设置时用 github.io 默认地址。
+- **私有配置**：放在 Secret `FLUXMON_PRIVATE_CONFIG`（内容同 `config/private.json`，本地文件已被 gitignore），不进仓库。
 - **公开产物脱敏**：仓库与 Actions 日志都是公开的，CI 设置 `FLUXMON_PUBLIC=1`，看板数据、latest.md 和日志里都不含私有配置（LP 标签、合同承诺金额与承诺方、SOW 承诺类告警）；这些只出现在飞书与邮件里。
 
 - 看板支持中文 / English（右上角切换，或 `?lang=en`）。

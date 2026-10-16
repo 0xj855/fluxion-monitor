@@ -47,6 +47,8 @@ jobs:
       - name: Run monitor
         env:
           FLUXMON_LARK_WEBHOOK: ${{ secrets.FLUXMON_LARK_WEBHOOK }}
+          # 私有配置（LP 标签、合同承诺等，格式同 config/private.json）只放 Secret，不进仓库；公开产物会脱敏
+          FLUXMON_PRIVATE_CONFIG: ${{ secrets.FLUXMON_PRIVATE_CONFIG }}
           # 线上看板以这里为准：历史序列在缓存丢失时从 <站点>/data/history.json 续接
           FLUXMON_HISTORY_URL: ${{ env.FLUXMON_DASHBOARD_URL }}data/history.json
           FLUXMON_PUBLIC: "1"     # 产物会公开发布：报告里剥掉 LP 标签、合同承诺等私有字段
@@ -55,7 +57,8 @@ jobs:
       # 监控本身失败时发邮件（6 小时内只发一封）；必须在 cache save 之前，冷却时间才能存进数据库
       - name: Notify failure
         if: failure()
-        run: python -m fluxmon.mailer failed "workflow run failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          python -m fluxmon.mailer failed "workflow run failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - uses: actions/cache/save@v4
         if: always()
