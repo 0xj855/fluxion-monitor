@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import json
 import time
 import urllib.error
@@ -214,7 +214,7 @@ def probe_rfq_depth(symbol, native, usdc, depth_sizes_usd=(1000, 10000, 50000, 1
     mid = (ask_1k + (bid_1k or ask_1k)) / 2
     spread_usd = round(ask_1k - bid_1k, 4) if bid_1k else None
     spread_pct = round(((ask_1k - bid_1k) / mid * 100), 4) if bid_1k else None
-    spread_bps = round(spread_pct * 100, 1) if spread_pct else None
+    spread_bps = round(spread_pct * 100, 1) if spread_pct is not None else None
 
     max_buy = max([int(k) for k, v in buy_depth.items() if v.get("status") == 200] or [0])
     max_sell = max([int(k) for k, v in sell_depth.items() if v.get("status") == 200] or [0])
@@ -226,6 +226,42 @@ def probe_rfq_depth(symbol, native, usdc, depth_sizes_usd=(1000, 10000, 50000, 1
         "buy_depth": buy_depth, "sell_depth": sell_depth,
         "max_buy_usd": max_buy, "max_sell_usd": max_sell
     }
+
+
+def _nth_weekday(y, m, wd, n):
+    """y 年 m 月第 n 个星期 wd（0=周一）；n=-1 为最后一个。"""
+    if n > 0:
+        d = date(y, m, 1)
+        return d + timedelta(days=(wd - d.weekday()) % 7 + 7 * (n - 1))
+    d = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
+    return d - timedelta(days=(d.weekday() - wd) % 7)
+
+
+def _easter(y):
+    a, b, c = y % 19, y // 100, y % 100
+    d, e = b // 4, b % 4
+    g = (8 * b + 13) // 25
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    return date(y, (h + l - 7 * m + 114) // 31, (h + l - 7 * m + 114) % 31 + 1)
+
+
+def us_market_calendar(y):
+    """NYSE 全天休市日与 13:00 提前收盘日（按交易所规则推算，不含临时休市）。"""
+    def observed(d):   # 周六 → 周五，周日 → 周一
+        return d - timedelta(days=1) if d.weekday() == 5 else d + timedelta(days=1) if d.weekday() == 6 else d
+    nyd = date(y, 1, 1)
+    holidays = {nyd + timedelta(days=1)} if nyd.weekday() == 6 else ({nyd} if nyd.weekday() < 5 else set())   # 元旦逢周六不补休
+    holidays |= {_nth_weekday(y, 1, 0, 3), _nth_weekday(y, 2, 0, 3), _easter(y) - timedelta(days=2),
+                 _nth_weekday(y, 5, 0, -1), observed(date(y, 6, 19)), observed(date(y, 7, 4)),
+                 _nth_weekday(y, 9, 0, 1), _nth_weekday(y, 11, 3, 4), observed(date(y, 12, 25))}
+    early = {_nth_weekday(y, 11, 3, 4) + timedelta(days=1)}
+    for d in (date(y, 7, 3), date(y, 12, 24)):
+        if d.weekday() < 5 and d not in holidays:
+            early.add(d)
+    return holidays, early
 
 
 def get_trading_session(dt=None):
@@ -244,12 +280,15 @@ def get_trading_session(dt=None):
     weekday = dt.weekday()
     mins = dt.hour * 60 + dt.minute
 
-    if weekday in (5, 6):
+    holidays, early = us_market_calendar(dt.year)
+    close = 13 * 60 if dt.date() in early else 16 * 60
+
+    if weekday in (5, 6) or dt.date() in holidays:   # 休市日沿用周末的 SLA 基准
         session = "weekend"
-        name_zh = "周末时段 (Weekend Hours)"
-        name_en = "Weekend Hours"
+        name_zh = "周末时段 (Weekend Hours)" if weekday in (5, 6) else "美股休市日 (Market Holiday)"
+        name_en = "Weekend Hours" if weekday in (5, 6) else "Market Holiday"
         is_open = False
-    elif 9 * 60 + 30 <= mins < 16 * 60:
+    elif 9 * 60 + 30 <= mins < close:
         session = "market_open"
         name_zh = "美股盘中时段 (Market Open, 9:30 AM – 4:00 PM ET)"
         name_en = "Market Open Hours (9:30 AM – 4:00 PM ET)"

@@ -75,7 +75,11 @@ xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deploym
 
 ## 在线看板（GitHub Pages，https://malerts.app）
 
-`.github/workflows/monitor.yml` 每 5 分钟在 GitHub Actions 上运行一次监控，并把 `site/index.html` 与最新数据发布到 GitHub Pages：
+`.github/workflows/monitor.yml` 在 GitHub Actions 上运行监控，并把 `site/index.html` 与最新数据发布到 GitHub Pages：
+
+- **触发频率**：GitHub 对公开仓库的 `schedule` 会大幅降频（实测 4–5 小时一次），只作兜底。真正的 5 分钟节奏由 `ops/cron-worker`（Cloudflare Worker Cron Trigger）调用 `workflow_dispatch` 提供，部署方法见 `ops/cron-worker/worker.js` 顶部注释。
+- **站点地址**：仓库变量 `FLUXMON_SITE_URL`（如 `https://malerts.app/`，以 `/` 结尾），邮件中的看板链接与缓存丢失时的历史续接都以它为准；未设置时用 github.io 默认地址。
+- **公开产物脱敏**：仓库与 Actions 日志都是公开的，CI 设置 `FLUXMON_PUBLIC=1`，看板数据、latest.md 和日志里都不含私有配置（LP 标签、合同承诺金额与承诺方、SOW 承诺类告警）；这些只出现在飞书与邮件里。
 
 - 看板支持中文 / English（右上角切换，或 `?lang=en`）。
 - 看板读取 `data/latest.json`（当前快照，含 ±30% 流动性分布、累积深度曲线、LP 头寸）和 `data/history.json`（30 天时间序列）。
@@ -85,5 +89,6 @@ xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deploym
   - **只发 critical**：同一告警 key 只发一次；持续存在、或消失不足 24h（`email.critical_quiet_s`）又重新触发都不会重复发；恢复不单独发邮件。同一轮的多条新告警合并成一封。
   - **每日日报**：每天 UTC `email.daily_hour_utc` 点（默认 1 点 = 北京时间 9 点）之后的第一轮发送一封，含当前告警、过去 24h 已恢复告警、TVL 前 20 池子、RFQ 与 xStocks 充提概况。`--daily-now` 可立即发送一封测试。
   - 去重状态存在 SQLite 里；Actions cache 丢失时可能重发一次当前仍在的 critical。
+  - **运行失败提醒**：workflow 失败时发一封 `[FAILED]` 邮件（附运行链接），6 小时内不重复。
 
 本地预览：`./run.sh --no-notify && mkdir -p _site/data && cp site/index.html _site/ && cp data/reports/*.json _site/data/ && python3 -m http.server -d _site 8000`

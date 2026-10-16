@@ -60,20 +60,26 @@ def critical_alerts(store, fired, now, cfg):
     state = store.get("email_critical", {})
     new = [(k, msg) for k, (sev, msg, _, _) in fired.items()
            if sev == "critical" and (k not in state or now - state[k]["seen"] > quiet)]
+    sent = False
     if new:
         ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(now))
         subject = f"[CRITICAL] {SUBJECT}：{len(new)} 条新告警"
         body = f"<p>{ts}</p><ul>" + "".join(f"<li>{html.escape(m)}</li>" for _, m in new) + "</ul>"
         try:
             send(subject, _page(subject, body), f"{ts}\n" + "\n".join(f"- {m}" for _, m in new))
+            sent = True
             print(f"critical email sent: {len(new)}")
         except Exception as e:
             print("critical email failed:", e)
-            new = []   # 发送失败不记为已发，下轮重试
-    for k, _ in new:
-        state[k] = {"sent": now, "seen": now}
+    pending = {k for k, _ in new}
     for k, (sev, *_rest) in fired.items():
-        if sev == "critical" and k in state:
+        if sev != "critical":
+            continue
+        if k in pending:
+            if sent:
+                state[k] = {"sent": now, "seen": now}
+            # 发送失败：保持原状态（含旧的 seen），下轮仍算新一轮重试
+        elif k in state:
             state[k]["seen"] = now
     store.put("email_critical", {k: v for k, v in state.items() if now - v["seen"] <= 30 * 86400})
 
@@ -128,3 +134,27 @@ def daily_report(store, rep, now, cfg):
         print("daily email sent")
     except Exception as e:
         print("daily email failed:", e)
+
+
+def monitor_failed(store, now, detail, cooldown_s=6 * 3600):
+    """监控本身运行失败（workflow 失败步骤调用）。同一问题 6 小时内只发一封，恢复后重新计时。"""
+    last = store.get("email_failure_last", 0)
+    if now - last < cooldown_s:
+        print("failure email suppressed (cooldown)")
+        return
+    subject = f"[FAILED] {SUBJECT} 运行失败"
+    try:
+        send(subject, _page(subject, f"<p>{html.escape(detail)}</p>"), detail)
+        store.put("email_failure_last", now)
+        print("failure email sent")
+    except Exception as e:
+        print("failure email failed:", e)
+
+
+if __name__ == "__main__":   # python -m fluxmon.mailer failed "<详情>"
+    import sys
+    from pathlib import Path
+    from .store import Store
+    if len(sys.argv) >= 2 and sys.argv[1] == "failed" and configured():
+        monitor_failed(Store(Path(__file__).resolve().parent.parent / "data" / "fluxmon.db"), int(time.time()),
+                       sys.argv[2] if len(sys.argv) > 2 else "monitor run failed")

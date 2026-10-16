@@ -148,6 +148,9 @@ class Store:
         self.db.execute("DELETE FROM xfers WHERE block<?", (before_block,))
         self.db.commit()
 
+    def has_snapshots(self):
+        return self.db.execute("SELECT 1 FROM snapshots LIMIT 1").fetchone() is not None
+
     def previous_snapshot(self, pool, before_ts, min_age_s=0):
         row = self.db.execute("SELECT data FROM snapshots WHERE pool=? AND ts<=? ORDER BY ts DESC LIMIT 1",
                               (pool, before_ts - min_age_s)).fetchone()

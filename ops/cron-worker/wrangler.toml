@@ -1,0 +1,11 @@
+name = "fluxmon-cron"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+REPO = "0xj855/fluxion-monitor"
+WORKFLOW = "monitor.yml"
+REF = "main"

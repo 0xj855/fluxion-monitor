@@ -19,6 +19,13 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      # 邮件（Resend）：只发 critical（按 key 去重）+ 每日日报；未设置 API key / EMAIL_TO 时不发
+      FLUXMON_RESEND_API_KEY: ${{ secrets.FLUXMON_RESEND_API_KEY }}
+      FLUXMON_EMAIL_TO: ${{ secrets.FLUXMON_EMAIL_TO }}
+      FLUXMON_EMAIL_FROM: ${{ secrets.FLUXMON_EMAIL_FROM }}
+      # 站点地址：仓库变量 FLUXMON_SITE_URL（自定义域名），未设置时用默认的 github.io 地址；须以 / 结尾
+      FLUXMON_DASHBOARD_URL: ${{ vars.FLUXMON_SITE_URL || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
     timeout-minutes: 25
     environment:
       name: github-pages
@@ -40,14 +47,15 @@ jobs:
       - name: Run monitor
         env:
           FLUXMON_LARK_WEBHOOK: ${{ secrets.FLUXMON_LARK_WEBHOOK }}
-          # 邮件（Resend）：只发 critical（按 key 去重）+ 每日日报；未设置 API key / EMAIL_TO 时不发
-          FLUXMON_RESEND_API_KEY: ${{ secrets.FLUXMON_RESEND_API_KEY }}
-          FLUXMON_EMAIL_TO: ${{ secrets.FLUXMON_EMAIL_TO }}
-          FLUXMON_EMAIL_FROM: ${{ secrets.FLUXMON_EMAIL_FROM }}
-          FLUXMON_DASHBOARD_URL: https://malerts.app/
-          # 历史序列以线上看板为准，缓存丢失时从这里续接
-          FLUXMON_HISTORY_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/history.json
+          # 线上看板以这里为准：历史序列在缓存丢失时从 <站点>/data/history.json 续接
+          FLUXMON_HISTORY_URL: ${{ env.FLUXMON_DASHBOARD_URL }}data/history.json
+          FLUXMON_PUBLIC: "1"     # 产物会公开发布：报告里剥掉 LP 标签、合同承诺等私有字段
         run: python -m fluxmon.main
+
+      # 监控本身失败时发邮件（6 小时内只发一封）；必须在 cache save 之前，冷却时间才能存进数据库
+      - name: Notify failure
+        if: failure()
+        run: python -m fluxmon.mailer failed "workflow run failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - uses: actions/cache/save@v4
         if: always()

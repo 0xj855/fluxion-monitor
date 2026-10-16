@@ -101,6 +101,20 @@ def designated_alerts(ds, cfg):
     return out
 
 
+PRIVATE_DESIGNATED = ("commitment_usd", "committed_owners", "committed_label")
+
+
+def public_view(rep, cfg, xcat):
+    """会公开发布的报告（看板数据、latest.md、公开的 Actions 日志）：去掉私有配置带来的 LP 标签、
+    合同承诺金额与承诺方，designated 按无私有配置重算；私有告警只走飞书 / 邮件。"""
+    pools = [{**r, "lp": {**r["lp"], "holders": [{**h, "label": None} for h in r["lp"].get("holders", [])]}} if r.get("lp") else r
+             for r in rep["pools"]]
+    pub_cfg = {**cfg, "designated": {k: v for k, v in cfg["designated"].items() if k not in PRIVATE_DESIGNATED}} \
+        if cfg.get("designated") else cfg
+    return {**rep, "pools": pools, "lp_labels": {}, "designated": designated_summary(pools, pub_cfg, {}, xcat),
+            "alerts": [a for a in rep["alerts"] if not a["key"].startswith("designated:")]}
+
+
 def notify(cfg, lines):
     hook = os.environ.get(cfg["lark_webhook_env"])
     if not hook or not lines:
@@ -118,7 +132,7 @@ def run(args):
     store = Store(ROOT / "data" / "fluxmon.db")
     now = int(time.time())
     hist_url = os.environ.get("FLUXMON_HISTORY_URL")
-    if hist_url:   # CI：从线上看板续接历史
+    if hist_url and not store.has_snapshots():   # CI 缓存丢失：从线上看板续接历史
         try:
             hist = json.load(urllib.request.urlopen(urllib.request.Request(hist_url, headers={"user-agent": "fluxmon"}), timeout=30))
             print("imported history rows:", store.import_history(hist))
@@ -297,13 +311,17 @@ def run(args):
             else:
                 actual_mid_bps = item["spread_bps"] / 2 if item.get("spread_bps") is not None else None
                 item["actual_mid_bps"] = round(actual_mid_bps, 1) if actual_mid_bps is not None else None
-                if actual_mid_bps is not None and actual_mid_bps <= bm[1]:
+                if actual_mid_bps is None:   # 只有买价、没有卖价，算不出点差
+                    item["sla_status"] = "no_bid"
+                    item["sla_text_zh"] = "缺卖价"
+                    item["sla_text_en"] = "No Bid"
+                elif actual_mid_bps <= bm[1]:
                     item["sla_status"] = "pass"
                     item["sla_text_zh"] = "达标"
                     item["sla_text_en"] = "Pass"
                 else:
                     item["sla_status"] = "wide"
-                    diff = (actual_mid_bps - bm[1]) if actual_mid_bps is not None else 0
+                    diff = actual_mid_bps - bm[1]
                     item["sla_text_zh"] = f"超标 (+{diff:.1f}bps)"
                     item["sla_text_en"] = f"Wide (+{diff:.1f}bps)"
 
@@ -382,15 +400,16 @@ def run(args):
     for key, sev, code, params in designated_alerts(designated, cfg):
         fired[key] = (sev, message_zh(code, params), code, params)
     active = store.active_alerts()
-    new_lines, resolved_lines = [], []
+    new_lines, resolved_lines = [], []   # [(key, 文案)]
+    rank = {"info": 0, "warn": 1, "critical": 2}
     for key, (sev, msg, _, _) in fired.items():
-        if key not in active:
-            new_lines.append(f"[{sev.upper()}] {msg}")
+        if key not in active or rank.get(sev, 0) > rank.get(active[key][1], 0):   # 新触发，或级别升级
+            new_lines.append((key, f"[{sev.upper()}] {msg}"))
         store.set_alert(key, sev, msg, now)
     for key, row in active.items():
         if key not in fired:
             store.resolve_alert(key, now)
-            resolved_lines.append(f"[已恢复] {row[2]}")
+            resolved_lines.append((key, f"[已恢复] {row[2]}"))
     for r in rows:
         r.pop("_val", None)
     store.save_snapshot(now, head, rows)
@@ -400,16 +419,19 @@ def run(args):
                          "pools_tracked": sum(1 for p in pools if p["dex"] == d["id"]),
                          "pools_shown": sum(1 for r in rows if r["dex"] == d["id"])} for d in dexes.values()],
               "alerts": [{"key": k, "severity": s, "message": m, "code": c, "params": p} for k, (s, m, c, p) in fired.items()]}
+    public = bool(os.environ.get("FLUXMON_PUBLIC"))
+    pub = public_view(report, cfg, xcat) if public else report
     out_dir = ROOT / "data" / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "latest.json").write_text(json.dumps(clean(report), indent=1, ensure_ascii=False))
-    (out_dir / "latest.md").write_text(render_md(report))
+    (out_dir / "latest.json").write_text(json.dumps(clean(pub), indent=1, ensure_ascii=False))
+    (out_dir / "latest.md").write_text(render_md(pub))
     (out_dir / "history.json").write_text(json.dumps(clean(store.export_history()), separators=(",", ":")))
-    print(render_console(report))
-    if new_lines or resolved_lines:
-        print("\n".join(["", "== 告警变化 =="] + new_lines + resolved_lines))
+    print(render_console(pub))
+    changes = new_lines + resolved_lines
+    if changes:
+        print("\n".join(["", "== 告警变化 =="] + [l for k, l in changes if not (public and k.startswith("designated:"))]))
         if not args.no_notify:
-            notify(cfg, new_lines + resolved_lines)
+            notify(cfg, [l for _, l in changes])
     if not args.no_notify and mailer.configured():
         ecfg = cfg.get("email", {})
         mailer.critical_alerts(store, fired, now, ecfg)

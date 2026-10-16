@@ -86,7 +86,7 @@ def sync_events(store, pools, head, backfill_days, usd_of):
             rows.append((pa, int(l["blockNumber"], 16), int(l["logIndex"], 16), kind, float(a0), float(a1),
                          usd_of(by_addr[pa], a0, a1, kind), actor))
     store.add_events(rows)
-    store.put("events_synced", {pa: head for pa in by_addr})
+    store.put("events_synced", {**last, **{pa: head for pa in by_addr}})   # 合并：暂时未监控的池子保留各自游标
     return rows
 
 
