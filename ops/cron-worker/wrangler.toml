@@ -1,6 +1,7 @@
 name = "mantle-liquidity-monitor-cron"
 main = "worker.js"
 compatibility_date = "2026-09-01"
+workers_dev = false   # 只用 Cron Trigger，不需要公开 URL
 
 [triggers]
 crons = ["*/5 * * * *"]
