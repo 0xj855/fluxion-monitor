@@ -393,9 +393,11 @@ def run(args):
             print("flows failed:", e)
         try:   # 充提对手方画像；公开产物不用私有的做市商名单，避免间接暴露承诺方
             known = () if public else [*cfg.get("designated", {}).get("committed_owners", []), *cfg.get("lp_labels", {})]
-            cp_data = counterparty.classify(store, fcfg.get("labels", {}), xcat, prices, head, now, known)
+            cp_data = counterparty.classify(store, fcfg.get("labels", {}), xcat, prices, head, now, known,
+                                            lp_npm=dexes.get("fluxion", {}).get("npm"))
         except Exception as e:
-            print("counterparty failed:", e)
+            print("counterparty failed:", repr(e))
+            cp_data = {"ts": now, "error": "counterparty classification failed"}   # 页面显示暂不可用，而不是 404
 
     # ---- 告警（去重：仅新触发 / 恢复时推送）
     a = cfg["alerts"]
@@ -431,8 +433,7 @@ def run(args):
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "latest.json").write_text(json.dumps(clean(pub), indent=1, ensure_ascii=False))
     (out_dir / "latest.md").write_text(render_md(pub))
-    if cp_data:
-        (out_dir / "counterparties.json").write_text(json.dumps(clean(cp_data), indent=1, ensure_ascii=False))
+    (out_dir / "counterparties.json").write_text(json.dumps(clean(cp_data or {"ts": now, "error": "flows disabled"}), indent=1, ensure_ascii=False))
     (out_dir / "history.json").write_text(json.dumps(clean(store.export_history()), separators=(",", ":")))
     print(render_console(pub))
     changes = new_lines + resolved_lines

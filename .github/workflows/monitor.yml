@@ -70,8 +70,7 @@ jobs:
         run: |
           mkdir -p _site/data
           cp site/index.html site/flows.html _site/
-          cp data/reports/latest.json data/reports/history.json data/reports/latest.md _site/data/
-          cp data/reports/counterparties.json _site/data/ 2>/dev/null || true
+          cp data/reports/latest.json data/reports/history.json data/reports/latest.md data/reports/counterparties.json _site/data/
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -33,17 +33,19 @@ def _addr_info(store, addrs, now):
     return {a: {"contract": v[0], "nonce": v[1]} for a, v in cache.items()}
 
 
-def classify(store, labels, xcat, prices, head, now, known_mm=(), days=30):
-    """labels: flows.labels；prices: {symbol: 美元价}；known_mm: 已知做市商地址（公开产物传空）。"""
+def classify(store, labels, xcat, prices, head, now, known_mm=(), lp_npm=None, days=30):
+    """labels: flows.labels；prices: {symbol: 美元价}；known_mm: 已知做市商地址（公开产物传空）；
+    lp_npm: Fluxion NonfungiblePositionManager（"持有 Fluxion LP" 只认它的持仓）。"""
     lab = {a.lower(): v for a, v in labels.items()}
     ex = {a for a, v in lab.items() if v.get("kind") == "exchange"}
     issuer = {a for a, v in lab.items() if v.get("kind") == "issuer"}
     wrappers = {a for a, v in xcat.items() if v["kind"] == "wrapper"}
     special = ex | issuer | wrappers | {"0x" + "0" * 40}
     known_mm = {a.lower() for a in known_mm}
-    lp_owners = {o for (o,) in store.db.execute("SELECT DISTINCT owner FROM positions WHERE liquidity!='0'")}
+    lp_owners = {o for (o,) in store.db.execute("SELECT DISTINCT owner FROM positions WHERE liquidity!='0' AND npm=?", (lp_npm,))} if lp_npm else set()
     bpd = chain.BLOCKS_PER_DAY
     usd = lambda sym, amt: amt * (prices.get(sym) or 0)
+    weight = lambda sym, amt: usd(sym, amt) or amt   # 归并只比较占比，缺价格时退回按数量
 
     rows = store.xfers_since(0)   # (block, symbol, src, dst, amount)
     out_by, in_by = collections.defaultdict(list), collections.defaultdict(list)
@@ -64,16 +66,16 @@ def classify(store, labels, xcat, prices, head, now, known_mm=(), days=30):
     for a in {f for _, _, f, _ in dp}:
         srcs = collections.Counter()
         for _, s, f, amt in in_by[a]:
-            srcs[f] += usd(s, amt)
+            srcs[f] += weight(s, amt)
         if out_by[a] and all(t in ex for _, _, t, _ in out_by[a]) and 0 < len(srcs) <= 2:
             up = srcs.most_common(1)[0][0]
             deposit_up[a] = up
-            if up not in ex:
+            if up not in special:   # 交易所 / 包装合约 / 发行方 / 0x0 是公共地址，不能当作同一用户
                 parent[a] = up
     for a in {t for _, _, t, _ in wd}:
         dst = collections.Counter()
         for _, s, t, amt in out_by[a]:
-            dst[t] += usd(s, amt)
+            dst[t] += weight(s, amt)
         tot = sum(dst.values())
         if tot:
             top, v = dst.most_common(1)[0]
@@ -84,7 +86,7 @@ def classify(store, labels, xcat, prices, head, now, known_mm=(), days=30):
     for b, s, t, a in wd:
         e = ents[find(t)]; e["addrs"].add(t); e["wd"].append((b, s, a))
     for b, s, f, a in dp:
-        e = ents[find(deposit_up.get(f, f)) if deposit_up.get(f, f) not in ex else find(f)]
+        e = ents[find(f)]   # 充值地址已在上面归并到上游
         e["addrs"].add(f); e["dp"].append((b, s, a))
     info = _addr_info(store, sorted({a for k, e in ents.items() for a in e["addrs"] | {k}}), now)
 
@@ -100,7 +102,8 @@ def classify(store, labels, xcat, prices, head, now, known_mm=(), days=30):
             holds.append((min(nxt) - b) * 86400 / bpd / 3600 if nxt else None)
         held = [h for h in holds if h is not None]
         med = statistics.median(held) if held else None
-        nonce = max(info.get(m, {}).get("nonce", 0) for m in members)
+        eoa = [info[m]["nonce"] for m in members if m in info and not info[m]["contract"]]
+        nonce = max(eoa) if eoa else None   # 合约钱包的 nonce 不反映活跃度；查询失败时未知
         n = len(e["wd"]) + len(e["dp"])
         both = bool(e["wd"]) and bool(e["dp"])
         syms = sorted({s for _, s, _ in e["wd"] + e["dp"]})
@@ -118,7 +121,7 @@ def classify(store, labels, xcat, prices, head, now, known_mm=(), days=30):
                 why.append({"code": "issuer", "usd": iss_usd})
             if n >= R["flows_min"]:
                 why.append({"code": "many_flows", "n": n})
-            if both and nonce >= R["nonce_min"]:
+            if both and nonce is not None and nonce >= R["nonce_min"]:
                 why.append({"code": "two_way_active", "nonce": nonce})
             if wrap >= R["wrap_min"]:
                 why.append({"code": "wrap", "n": wrap})
@@ -131,7 +134,7 @@ def classify(store, labels, xcat, prices, head, now, known_mm=(), days=30):
             else:
                 if n <= R["retail_flows_max"]:
                     why.append({"code": "few_flows", "n": n})
-                if nonce < R["nonce_min"]:
+                if nonce is not None and nonce < R["nonce_min"]:
                     why.append({"code": "low_nonce", "nonce": nonce})
                 if not both:
                     why.append({"code": "one_way"})

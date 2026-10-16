@@ -123,7 +123,7 @@ const I18N = {
   zh: {
     docTitle: "Bybit 充提对手方画像", back: "← 返回流动性看板", title: "Bybit 充提对手方画像",
     subtitle: "Bybit 与 Mantle 之间的 xStocks 原生代币充提，按链上行为把对手方归并成实体，分为做市/套利/机构、散户和未判定。",
-    window: "时间窗口", loadFail: "数据加载失败：", noData: "暂无数据（首次运行后生成）。", updated: "更新于 ", blk: b => `区块 ${b}`,
+    window: "时间窗口", loadFail: "数据加载失败：", unavailable: "本轮对手方分析失败，暂不可用，下一轮更新后恢复。", noData: "暂无数据（首次运行后生成）。", updated: "更新于 ", blk: b => `区块 ${b}`,
     cls: { mm: "做市 / 套利 / 机构", retail: "散户", unknown: "未判定" },
     tile: (u, n, e) => `${u} · ${n} 笔 · ${e} 个实体`,
     shareTitle: "构成", shareDesc: w => `${w} 内的充提，按金额、笔数和实体数看三类的占比。`,
@@ -150,7 +150,7 @@ const I18N = {
   en: {
     docTitle: "Bybit Flow Counterparties", back: "← Back to liquidity dashboard", title: "Bybit flow counterparties",
     subtitle: "xStocks native-token flows between Bybit and Mantle. Counterparties are grouped into entities by on-chain behavior and classed as market maker / arbitrage / institution, retail, or undetermined.",
-    window: "Window", loadFail: "Failed to load data: ", noData: "No data yet (generated after the first run).", updated: "Updated ", blk: b => `Block ${b}`,
+    window: "Window", loadFail: "Failed to load data: ", unavailable: "Counterparty analysis failed this run; it will be back after the next update.", noData: "No data yet (generated after the first run).", updated: "Updated ", blk: b => `Block ${b}`,
     cls: { mm: "Market maker / arb / institution", retail: "Retail", unknown: "Undetermined" },
     tile: (u, n, e) => `${u} · ${n} transfers · ${e} entities`,
     shareTitle: "Composition", shareDesc: w => `Flows in the last ${w} by amount, transfer count and entity count.`,
@@ -209,6 +209,13 @@ function applyStatic() {
 function render() {
   const D = state.data;
   if (!D) return;
+  if (D.error) {
+    $("#meta").textContent = T().updated + new Date(D.ts * 1000).toLocaleString(LANG === "zh" ? "zh-CN" : "en-US");
+    $("#tiles").replaceChildren();
+    for (const id of ["#share", "#subtypes", "#entities", "#symbols"]) $(id).replaceChildren();
+    $("#share").append(el("div", { class: "empty", text: T().unavailable }));
+    return;
+  }
   const ago = Math.round((Date.now() / 1000 - D.ts) / 60);
   $("#meta").replaceChildren(el("div", { text: T().updated + new Date(D.ts * 1000).toLocaleString(LANG === "zh" ? "zh-CN" : "en-US") + (ago > 60 ? " ⚠" : "") }), el("div", { text: T().blk(D.head_block.toLocaleString()) }));
   const W = D.windows[state.win] || {};
@@ -249,7 +256,7 @@ function render() {
           el("td", { class: "l nw" }, el("span", { class: "chip " + e.class, text: T().cls[e.class] }), e.sub ? el("span", { class: "small", text: T().sub[e.sub] || e.sub }) : null),
           el("td", { class: "nw" }, String(e.wd_n), el("span", { class: "small", text: usd(e.wd_usd) })),
           el("td", { class: "nw" }, String(e.dp_n), el("span", { class: "small", text: usd(e.dp_usd) })),
-          el("td", { text: e.nonce.toLocaleString() }), el("td", { text: e.syms.length, title: e.syms.join(", ") }),
+          el("td", { text: e.nonce == null ? "–" : e.nonce.toLocaleString() }), el("td", { text: e.syms.length, title: e.syms.join(", ") }),
           el("td", { class: "why", text: e.why.map(w => (T().why[w.code] || (() => w.code))(w)).join(LANG === "zh" ? "；" : "; ") }));
       })))) : el("div", { class: "empty", text: T().noData }));
 
