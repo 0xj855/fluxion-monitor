@@ -44,7 +44,7 @@ jobs:
           FLUXMON_RESEND_API_KEY: ${{ secrets.FLUXMON_RESEND_API_KEY }}
           FLUXMON_EMAIL_TO: ${{ secrets.FLUXMON_EMAIL_TO }}
           FLUXMON_EMAIL_FROM: ${{ secrets.FLUXMON_EMAIL_FROM }}
-          FLUXMON_DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          FLUXMON_DASHBOARD_URL: https://malerts.app/
           # 历史序列以线上看板为准，缓存丢失时从这里续接
           FLUXMON_HISTORY_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/history.json
         run: python -m fluxmon.main

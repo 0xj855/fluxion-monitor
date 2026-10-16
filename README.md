@@ -73,7 +73,7 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 
 xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deployment 的 native 与 wrapper 地址）。Fluxion 上 xStocks 的 AMM 池是 **ERC-4626 包装币 / USDC**，native xStock 主要走 RFQ。
 
-## 在线看板（GitHub Pages）
+## 在线看板（GitHub Pages，https://malerts.app）
 
 `.github/workflows/monitor.yml` 每 5 分钟在 GitHub Actions 上运行一次监控，并把 `site/index.html` 与最新数据发布到 GitHub Pages：
 
