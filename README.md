@@ -25,7 +25,7 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 3. **计算指标**（美元口径，见下表）。
 4. **RFQ 深度探测**：对主流 xStocks（SOW 10 个指定标的）向 Fluxion RFQ 接口探测双向做市报价、买卖价差（Spread）及多档买卖深度（$1k / $10k / $50k / $100k），并与链上 AMM 冲击横向对比。
 5. **跨链比价**：对上述标的同时向 Solana 上的 Jupiter 聚合器询价（$10k / $100k 买入、$10k 卖出），并取标的美股最新成交价（Yahoo，含盘前盘后），计算两边相对美股的成本和 Fluxion 相对 Jupiter 的优势；Solana 价格按 Token-2022 Scaled UI multiplier（股息再投资）换算成每股。逐轮写入历史，看板按交易时段（盘中 / 盘前盘后 / 周末）汇总报价在线率与优势中位数。`--skip-venue` 可跳过。
-6. **流通量与 Bybit 充提**：增量同步 10 个指定 xStocks 原生代币的 Transfer 事件（首次回填 30 天），按 `config/config.json → flows.labels`（Mantlescan 公开标签：Bybit 钱包为 exchange，Backed: Deployer 为 issuer）统计总供应、发行方库存、流通量、交易所持仓，以及 24h / 7d / 30d 的提现（交易所 → 链上）与充值（链上 → 交易所）。
+6. **流通量与 Bybit 充提**：增量同步 10 个指定 xStocks 原生代币的 Transfer 事件（首次回填 30 天），按 `config/config.json → flows.labels`（Mantlescan 公开标签：Bybit 钱包为 exchange，Backed: Deployer 为 issuer）统计总供应、发行方库存、流通量、交易所持仓，以及 24h / 7d / 30d 的提现（交易所 → 链上）与充值（链上 → 交易所）。对手方按链上行为归并成实体并分为做市/套利/机构、散户、未判定（`fluxmon/counterparty.py`），看板独立页面 `flows.html`。
 7. **同步事件**：Swap / Mint / Burn 增量入库 → 24h / 7d 成交、费率 APR、大额撤出。
 8. **LP 集中度**：扫描 NonfungiblePositionManager 的持仓 NFT → 每个池子在区间内流动性的持有人分布、主要头寸距区间边界的距离。
 9. **告警**：按 `config/config.json` 阈值判定，按 key 去重，只在新触发 / 恢复时推送。

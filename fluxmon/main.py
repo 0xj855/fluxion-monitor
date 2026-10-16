@@ -9,7 +9,7 @@ from pathlib import Path
 from . import chain
 from .alerts import evaluate, message_zh
 from . import lb
-from . import flows, mailer, venue
+from . import counterparty, flows, mailer, venue
 from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sweep_pools, sync_events, sync_pools, sync_positions
@@ -130,6 +130,7 @@ def notify(cfg, lines):
 def run(args):
     cfg = load_config()
     chain.RPC_URL = cfg["rpc_url"]
+    public = bool(os.environ.get("FLUXMON_PUBLIC"))   # 产物会公开发布
     store = Store(ROOT / "data" / "fluxmon.db")
     now = int(time.time())
     hist_url = os.environ.get("FLUXMON_HISTORY_URL")
@@ -377,7 +378,7 @@ def run(args):
         store.save_rfq_snapshot(now, {it["symbol"]: venue.history_row(it, session_info["session"]) for it in rfq_items})
 
     # ---- xStocks 流通量与交易所充提
-    flow_data = None
+    flow_data = cp_data = None
     fcfg = cfg.get("flows", {})
     if fcfg.get("enabled", True):
         try:
@@ -390,6 +391,11 @@ def run(args):
             flow_data = flows.summarize(store, natives, fcfg.get("labels", {}), prices, head, now)
         except Exception as e:
             print("flows failed:", e)
+        try:   # 充提对手方画像；公开产物不用私有的做市商名单，避免间接暴露承诺方
+            known = () if public else [*cfg.get("designated", {}).get("committed_owners", []), *cfg.get("lp_labels", {})]
+            cp_data = counterparty.classify(store, fcfg.get("labels", {}), xcat, prices, head, now, known)
+        except Exception as e:
+            print("counterparty failed:", e)
 
     # ---- 告警（去重：仅新触发 / 恢复时推送）
     a = cfg["alerts"]
@@ -420,12 +426,13 @@ def run(args):
                          "pools_tracked": sum(1 for p in pools if p["dex"] == d["id"]),
                          "pools_shown": sum(1 for r in rows if r["dex"] == d["id"])} for d in dexes.values()],
               "alerts": [{"key": k, "severity": s, "message": m, "code": c, "params": p} for k, (s, m, c, p) in fired.items()]}
-    public = bool(os.environ.get("FLUXMON_PUBLIC"))
     pub = public_view(report, cfg, xcat) if public else report
     out_dir = ROOT / "data" / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "latest.json").write_text(json.dumps(clean(pub), indent=1, ensure_ascii=False))
     (out_dir / "latest.md").write_text(render_md(pub))
+    if cp_data:
+        (out_dir / "counterparties.json").write_text(json.dumps(clean(cp_data), indent=1, ensure_ascii=False))
     (out_dir / "history.json").write_text(json.dumps(clean(store.export_history()), separators=(",", ":")))
     print(render_console(pub))
     changes = new_lines + resolved_lines

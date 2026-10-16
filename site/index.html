@@ -109,6 +109,8 @@ tbody tr.sel{background:var(--hover);box-shadow:inset 3px 0 0 var(--ink)}
 .tip .r b{font-weight:650;color:var(--ink)}
 .tip .r .ln{width:12px;height:2px;border-radius:1px;display:inline-block}
 .tip .r span{color:var(--ink-2)}
+.card-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px}
+.card-head a{color:var(--ink-2);font-size:12.5px}
 .detail-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:12px}
 .detail-head h2{font-size:18px;margin:0}
 .detail-head a{color:var(--muted);font-size:12px}
@@ -251,7 +253,7 @@ const I18N = {
     vSess: { market_open: "盘中", pre_post: "盘前盘后", weekend: "周末" },
     vChart: "Fluxion 相对 Jupiter 的优势（各标的中位数，bps）", vSerBuy: "买 $100k", vSerSell: "卖 $10k",
     vNoData: "暂无数据", vNone: "暂无比价数据（等待下一轮运行）",
-    fTitle: "xStocks 流通量与 Bybit 充提",
+    fTitle: "xStocks 流通量与 Bybit 充提", fCpLink: "充提对手方画像（做市 / 散户）→",
     fDesc: "Mantle 上 10 个指定 xStocks 的原生代币：总供应扣除发行方（Backed）库存即为流通量；提现 = Bybit 钱包转出到链上地址，充值 = 链上地址转入 Bybit 钱包。地址标签来自 Mantlescan 公开标签。",
     fCirc: "流通量", fExch: "Bybit 钱包持有", fIssuer: "发行方库存", fNet7: "7 天净流入链上",
     fWinCols: ["窗口", "提现（Bybit → 链上）", "充值（链上 → Bybit）", "净流入链上", "链上转账总额"],
@@ -328,7 +330,7 @@ const I18N = {
     vSess: { market_open: "Market open", pre_post: "Pre/post", weekend: "Weekend" },
     vChart: "Fluxion advantage vs Jupiter (median across assets, bps)", vSerBuy: "Buy $100k", vSerSell: "Sell $10k",
     vNoData: "No data", vNone: "No comparison data yet (waiting for the next run).",
-    fTitle: "xStocks circulation & Bybit flows",
+    fTitle: "xStocks circulation & Bybit flows", fCpLink: "Flow counterparties (market makers vs retail) →",
     fDesc: "Native tokens of the 10 designated xStocks on Mantle: circulating = total supply minus issuer (Backed) inventory; withdrawal = Bybit wallet → on-chain address, deposit = on-chain address → Bybit wallet. Address labels are Mantlescan public tags.",
     fCirc: "Circulating", fExch: "Held by Bybit wallets", fIssuer: "Issuer inventory", fNet7: "7d net inflow on-chain",
     fWinCols: ["Window", "Withdrawals (Bybit → chain)", "Deposits (chain → Bybit)", "Net on-chain", "On-chain transfer volume"],
@@ -677,7 +679,7 @@ function renderFlows() {
   box.hidden = false;
   const t = F.totals, w7 = F.windows["7d"];
   const money = v => v == null ? "–" : "$" + compact(v);
-  const kids = [el("h2", { text: T().fTitle }), el("p", { class: "desc", text: T().fDesc }),
+  const kids = [el("div", { class: "card-head" }, el("h2", { text: T().fTitle }), el("a", { href: "flows.html", text: T().fCpLink })), el("p", { class: "desc", text: T().fDesc }),
     el("div", { class: "mini" }, ...[[T().fCirc, money(t.circulating_usd)], [T().fExch, money(t.exchange_usd)], [T().fIssuer, money(t.issuer_usd)],
       [T().fNet7, (w7.net_usd >= 0 ? "+" : "−") + money(Math.abs(w7.net_usd))]].map(([k, v]) => el("div", {}, el("div", { class: "k", text: k }), el("div", { class: "v", text: v }))))];
   const wt = el("table");

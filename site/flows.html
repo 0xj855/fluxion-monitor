@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bybit Flow Counterparties</title>
+<meta name="description" content="Who moves xStocks between Bybit and Mantle: market makers, arbitrage and institutions vs retail, inferred from on-chain behavior.">
+<style>
+:root{
+  color-scheme:light;
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --ring:rgba(11,11,11,.10); --hover:rgba(11,11,11,.04);
+  --mm:#2a78d6; --retail:#eb6834; --unk:#b9b8ae; --mm-bg:rgba(42,120,214,.12); --retail-bg:rgba(235,104,52,.14); --unk-bg:rgba(11,11,11,.06);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --ring:rgba(255,255,255,.10); --hover:rgba(255,255,255,.05);
+    --mm:#3987e5; --retail:#d95926; --unk:#5b5a55; --mm-bg:rgba(57,135,229,.18); --retail-bg:rgba(217,89,38,.2); --unk-bg:rgba(255,255,255,.08);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --ring:rgba(255,255,255,.10); --hover:rgba(255,255,255,.05);
+  --mm:#3987e5; --retail:#d95926; --unk:#5b5a55; --mm-bg:rgba(57,135,229,.18); --retail-bg:rgba(217,89,38,.2); --unk-bg:rgba(255,255,255,.08);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+a:focus-visible,button:focus-visible{outline:2px solid var(--mm);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:20px}
+.back{color:var(--muted);font-size:13px;text-decoration:none}
+.back:hover{color:var(--ink-2)}
+h1{font-size:22px;font-weight:650;margin:4px 0 0;letter-spacing:-.01em}
+.sub{color:var(--ink-2);margin-top:2px;max-width:70ch}
+.head-r{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.meta{color:var(--muted);font-size:13px;text-align:right}
+.seg{display:inline-flex;border:1px solid var(--ring);border-radius:8px;background:var(--surface);padding:2px}
+.seg button{border:0;background:none;color:var(--ink-2);font:inherit;font-size:13px;padding:5px 12px;border-radius:6px;cursor:pointer}
+.seg button:hover{background:var(--hover)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface);font-weight:550}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.filters .label{color:var(--muted);font-size:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.tile{background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:14px 16px;box-shadow:inset 0 3px 0 var(--c)}
+.tile .k{color:var(--ink-2);font-size:13px}
+.tile .v{font-size:24px;font-weight:620;margin-top:4px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.tile .d{color:var(--muted);font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:16px;margin-bottom:16px;min-width:0}
+.card h2{font-size:15px;font-weight:620;margin:0 0 2px}
+.card .desc{color:var(--muted);font-size:12.5px;margin:0 0 12px;max-width:90ch}
+.share{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:center}
+.share .lbl{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.bar{display:flex;height:14px;border-radius:3px;overflow:hidden;background:var(--unk-bg);min-width:60px}
+.bar span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--ink-2);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.tablewrap{overflow-x:auto;margin:0 -16px;padding:0 16px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums;vertical-align:top}
+th{color:var(--muted);font-weight:550;font-size:12px;white-space:nowrap}
+th.l,td.l{text-align:left}
+td.nw{white-space:nowrap}
+.small{display:block;color:var(--muted);font-size:12px}
+.mono{font-family:ui-monospace,Menlo,monospace}
+.why{text-align:left;color:var(--ink-2);min-width:260px;max-width:440px}
+.chip{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.chip.mm{background:var(--mm-bg);color:var(--mm)} .chip.retail{background:var(--retail-bg);color:var(--retail)} .chip.unknown{background:var(--unk-bg);color:var(--ink-2)}
+.barcell{width:30%;vertical-align:middle}
+.empty{color:var(--muted);padding:24px 0;text-align:center}
+footer{color:var(--muted);font-size:12px;margin-top:24px;line-height:1.7}
+@media (prefers-reduced-motion:no-preference){.bar span{transition:width .25s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <a class="back" href="./" data-i18n="back">← 返回流动性看板</a>
+      <h1 data-i18n="title">Bybit 充提对手方画像</h1>
+      <div class="sub" data-i18n="subtitle"></div>
+    </div>
+    <div class="head-r">
+      <div class="seg" id="f-lang" aria-label="Language">
+        <button data-v="zh" aria-pressed="false">中文</button>
+        <button data-v="en" aria-pressed="false">EN</button>
+      </div>
+      <div class="meta" id="meta">…</div>
+    </div>
+  </header>
+
+  <div class="filters" role="toolbar">
+    <span class="label" data-i18n="window">时间窗口</span>
+    <div class="seg" id="f-win">
+      <button data-v="24h" aria-pressed="false">24h</button>
+      <button data-v="7d" aria-pressed="false">7d</button>
+      <button data-v="30d" aria-pressed="true">30d</button>
+    </div>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+  <section class="card" id="share"></section>
+  <section class="card" id="subtypes"></section>
+  <section class="card" id="entities"></section>
+  <section class="card" id="symbols"></section>
+  <footer data-i18n="footer"></footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s);
+const EXPLORER = "https://mantlescan.xyz/address/";
+const CLASSES = ["mm", "retail", "unknown"];
+const state = { win: "30d", data: null };
+
+const I18N = {
+  zh: {
+    docTitle: "Bybit 充提对手方画像", back: "← 返回流动性看板", title: "Bybit 充提对手方画像",
+    subtitle: "Bybit 与 Mantle 之间的 xStocks 原生代币充提，按链上行为把对手方归并成实体，分为做市/套利/机构、散户和未判定。",
+    window: "时间窗口", loadFail: "数据加载失败：", noData: "暂无数据（首次运行后生成）。", updated: "更新于 ", blk: b => `区块 ${b}`,
+    cls: { mm: "做市 / 套利 / 机构", retail: "散户", unknown: "未判定" },
+    tile: (u, n, e) => `${u} · ${n} 笔 · ${e} 个实体`,
+    shareTitle: "构成", shareDesc: w => `${w} 内的充提，按金额、笔数和实体数看三类的占比。`,
+    byUsd: "按金额", byN: "按笔数", byEnt: "按实体数",
+    subTitle: "做市类流量的模式", subDesc: "30 天内归为做市 / 套利 / 机构的实体，按行为模式拆分。",
+    sub: { dex_arb: "DEX 套利", issuer: "机构申购 / 赎回", shuttle: "交易所账户间调拨", other: "高频 / 其他" },
+    subD: { dex_arb: "从 Bybit 提币后包装成 ERC-4626 包装币进 AMM 池交易，再充回 Bybit", issuer: "与发行方 Backed 直接申购或赎回，只有授权机构能做",
+            shuttle: "双向充提但链上几乎不交易，像是库存在交易所账户之间搬运", other: "高频往来，不属于以上模式" },
+    cSub: "模式", cEnt: "实体", cFlows: "笔数", cUsd: "金额", cShareAll: "占全部",
+    entTitle: "实体明细", entDesc: "30 天内与 Bybit 有往来的全部实体，按金额排序。关联地址是归并进同一实体的 Bybit 充值地址或转发钱包。",
+    cEntity: "实体", cClass: "分类", cWd: "提现（交易所 → 链上）", cDp: "充值（链上 → 交易所）", cNonce: "链上交易数", cSyms: "标的", cWhy: "判定依据",
+    linked: (n, dep) => `+${n} 个关联地址（${dep ? "含充值地址" : "转发钱包"}）`,
+    why: {
+      internal: () => "提币直接打到另一个 Bybit 充值地址（Bybit 用户之间转账）",
+      known_mm: () => "已知做市商", lp: () => "持有 Fluxion LP 头寸",
+      issuer: p => `与发行方申购 / 赎回 ${usd(p.usd)}`, many_flows: p => `30 天与交易所往来 ${p.n} 笔`,
+      two_way_active: p => `双向充提，链上交易 ${p.nonce.toLocaleString()} 笔`, wrap: p => `包装 / 解包 ${p.n} 次（走 AMM 池）`,
+      fast: p => `提币后中位 ${hours(p.h)} 内转出`, few_flows: p => `仅 ${p.n} 笔交易所往来`, low_nonce: p => `链上交易 ${p.nonce} 笔`,
+      one_way: () => "单向（只提或只充）", few_syms: p => `${p.n} 个标的`, held: p => p.h == null ? "提币后未转出" : `提币后持有 ${hours(p.h)}`,
+    },
+    symTitle: "按标的", symDesc: "30 天充提金额按对手方类别拆分。", cSym: "标的", cTotal: "充提总额", cMix: "构成",
+    footer: "数据源：Mantle 链上 xStocks Transfer 事件与 Mantlescan 公开标签（Bybit 钱包、Backed 发行方）。随流动性监控约每 5 分钟更新。",
+  },
+  en: {
+    docTitle: "Bybit Flow Counterparties", back: "← Back to liquidity dashboard", title: "Bybit flow counterparties",
+    subtitle: "xStocks native-token flows between Bybit and Mantle. Counterparties are grouped into entities by on-chain behavior and classed as market maker / arbitrage / institution, retail, or undetermined.",
+    window: "Window", loadFail: "Failed to load data: ", noData: "No data yet (generated after the first run).", updated: "Updated ", blk: b => `Block ${b}`,
+    cls: { mm: "Market maker / arb / institution", retail: "Retail", unknown: "Undetermined" },
+    tile: (u, n, e) => `${u} · ${n} transfers · ${e} entities`,
+    shareTitle: "Composition", shareDesc: w => `Flows in the last ${w} by amount, transfer count and entity count.`,
+    byUsd: "By amount", byN: "By transfers", byEnt: "By entities",
+    subTitle: "Market-maker flow patterns", subDesc: "Entities classed as market maker / arb / institution over 30 days, split by behavior.",
+    sub: { dex_arb: "DEX arbitrage", issuer: "Institutional mint / redeem", shuttle: "Exchange account shuttling", other: "High-frequency / other" },
+    subD: { dex_arb: "Withdraws from Bybit, wraps into ERC-4626 wrappers to trade AMM pools, deposits back", issuer: "Mints or redeems directly with the issuer Backed; only authorized institutions can",
+            shuttle: "Moves in both directions with almost no on-chain trading; looks like inventory moving between exchange accounts", other: "Frequent flows outside the patterns above" },
+    cSub: "Pattern", cEnt: "Entities", cFlows: "Transfers", cUsd: "Amount", cShareAll: "Share of all",
+    entTitle: "Entities", entDesc: "Every entity with Bybit flows in the last 30 days, by amount. Linked addresses are Bybit deposit addresses or forwarding wallets merged into the entity.",
+    cEntity: "Entity", cClass: "Class", cWd: "Withdrawals (exchange → chain)", cDp: "Deposits (chain → exchange)", cNonce: "On-chain txs", cSyms: "Tokens", cWhy: "Evidence",
+    linked: (n, dep) => `+${n} linked address${n > 1 ? "es" : ""} (${dep ? "incl. deposit address" : "forwarding wallet"})`,
+    why: {
+      internal: () => "Withdrew straight to another Bybit deposit address (Bybit user-to-user transfer)",
+      known_mm: () => "Known market maker", lp: () => "Holds Fluxion LP positions",
+      issuer: p => `Minted / redeemed ${usd(p.usd)} with the issuer`, many_flows: p => `${p.n} exchange transfers in 30 days`,
+      two_way_active: p => `Two-way flows, ${p.nonce.toLocaleString()} on-chain txs`, wrap: p => `Wrapped / unwrapped ${p.n} times (AMM pools)`,
+      fast: p => `Moved on a median ${hours(p.h)} after withdrawal`, few_flows: p => `Only ${p.n} exchange transfer${p.n > 1 ? "s" : ""}`, low_nonce: p => `${p.nonce} on-chain txs`,
+      one_way: () => "One direction only", few_syms: p => `${p.n} token${p.n > 1 ? "s" : ""}`, held: p => p.h == null ? "Not moved since withdrawal" : `Held ${hours(p.h)} after withdrawal`,
+    },
+    symTitle: "By token", symDesc: "30-day flow amount split by counterparty class.", cSym: "Token", cTotal: "Total flows", cMix: "Mix",
+    footer: "Sources: xStocks Transfer events on Mantle and Mantlescan public labels (Bybit wallets, Backed issuer). Refreshed with the liquidity monitor about every 5 minutes.",
+  },
+};
+const qsLang = new URLSearchParams(location.search).get("lang");
+let saved = null; try { saved = localStorage.getItem("fluxmon.lang"); } catch (e) {}
+let LANG = ["zh", "en"].includes(qsLang) ? qsLang : ["zh", "en"].includes(saved) ? saved : (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+const T = () => I18N[LANG];
+
+function compact(v) {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (a >= 1e4) return (v / 1e3).toFixed(1) + "K";
+  if (a >= 1e3) return (v / 1e3).toFixed(2) + "K";
+  return v.toFixed(0);
+}
+const usd = v => v == null || !isFinite(v) ? "–" : "$" + compact(v);
+const pct = (a, b) => b ? a / b * 100 : 0;
+const hours = h => h < 1 ? Math.max(1, Math.round(h * 60)) + (LANG === "zh" ? " 分钟" : " min") : h < 48 ? h.toFixed(1) + (LANG === "zh" ? " 小时" : "h") : (h / 24).toFixed(1) + (LANG === "zh" ? " 天" : " days");
+const short = a => a.slice(0, 6) + "…" + a.slice(-4);
+const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? e.className = v : k === "text" ? e.textContent = v : e.setAttribute(k, v);
+  for (const k of kids) if (k != null) e.append(k); return e; };
+const COLOR = { mm: "var(--mm)", retail: "var(--retail)", unknown: "var(--unk)" };
+const bar = parts => { const b = el("div", { class: "bar", role: "img", "aria-label": parts.map(([c, p]) => `${T().cls[c]} ${p.toFixed(1)}%`).join(", ") });
+  for (const [c, p] of parts) if (p > 0) b.append(el("span", { style: `width:${p.toFixed(3)}%;background:${COLOR[c]}`, title: `${T().cls[c]} ${p.toFixed(1)}%` }));
+  return b; };
+
+function applyStatic() {
+  document.documentElement.lang = LANG === "zh" ? "zh-CN" : "en";
+  document.title = T().docTitle;
+  for (const e of document.querySelectorAll("[data-i18n]")) e.textContent = T()[e.dataset.i18n];
+  for (const b of document.querySelectorAll("#f-lang button")) b.setAttribute("aria-pressed", b.dataset.v === LANG);
+}
+
+function render() {
+  const D = state.data;
+  if (!D) return;
+  const ago = Math.round((Date.now() / 1000 - D.ts) / 60);
+  $("#meta").replaceChildren(el("div", { text: T().updated + new Date(D.ts * 1000).toLocaleString(LANG === "zh" ? "zh-CN" : "en-US") + (ago > 60 ? " ⚠" : "") }), el("div", { text: T().blk(D.head_block.toLocaleString()) }));
+  const W = D.windows[state.win] || {};
+  const g = (c, f) => (W[c] || {})[f] || 0;
+  const u = c => g(c, "wd_usd") + g(c, "dp_usd"), n = c => g(c, "wd_n") + g(c, "dp_n");
+  const totU = CLASSES.reduce((s, c) => s + u(c), 0), totN = CLASSES.reduce((s, c) => s + n(c), 0), totE = CLASSES.reduce((s, c) => s + g(c, "entities"), 0);
+
+  $("#tiles").replaceChildren(...CLASSES.map(c => el("div", { class: "tile", style: `--c:${COLOR[c]}` },
+    el("div", { class: "k", text: T().cls[c] }), el("div", { class: "v", text: totU ? pct(u(c), totU).toFixed(1) + "%" : "–" }),
+    el("div", { class: "d", text: T().tile(usd(u(c)), n(c), g(c, "entities")) }))));
+
+  const share = el("div", { class: "share" },
+    el("span", { class: "lbl", text: T().byUsd }), bar(CLASSES.map(c => [c, pct(u(c), totU)])),
+    el("span", { class: "lbl", text: T().byN }), bar(CLASSES.map(c => [c, pct(n(c), totN)])),
+    el("span", { class: "lbl", text: T().byEnt }), bar(CLASSES.map(c => [c, pct(g(c, "entities"), totE)])));
+  const legend = el("div", { class: "legend" }, ...CLASSES.map(c => el("span", {}, el("i", { style: `background:${COLOR[c]}` }), T().cls[c])));
+  $("#share").replaceChildren(el("h2", { text: T().shareTitle }), el("p", { class: "desc", text: T().shareDesc(state.win) }),
+    totN ? share : el("div", { class: "empty", text: T().noData }), legend);
+
+  const W30 = D.windows["30d"] || {}; const tot30 = CLASSES.reduce((s, c) => s + ((W30[c] || {}).wd_usd || 0) + ((W30[c] || {}).dp_usd || 0), 0);
+  const subs = Object.entries(D.subtypes || {}).sort((a, b) => b[1].usd - a[1].usd);
+  $("#subtypes").replaceChildren(el("h2", { text: T().subTitle }), el("p", { class: "desc", text: T().subDesc }),
+    subs.length ? el("div", { class: "tablewrap" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", { class: "l", text: T().cSub }), el("th", { text: T().cEnt }), el("th", { text: T().cFlows }), el("th", { text: T().cUsd }), el("th", { text: T().cShareAll }))),
+      el("tbody", {}, ...subs.map(([k, v]) => el("tr", {},
+        el("td", { class: "l" }, el("b", { text: T().sub[k] || k }), el("span", { class: "small", text: T().subD[k] || "" })),
+        el("td", { text: v.entities }), el("td", { text: v.flows }), el("td", { text: usd(v.usd) }), el("td", { text: pct(v.usd, tot30).toFixed(1) + "%" })))))) : el("div", { class: "empty", text: T().noData }));
+
+  const ents = D.entities || [];
+  $("#entities").replaceChildren(el("h2", { text: T().entTitle }), el("p", { class: "desc", text: T().entDesc }),
+    ents.length ? el("div", { class: "tablewrap" }, el("table", {},
+      el("thead", {}, el("tr", {}, ...[["l", T().cEntity], ["l", T().cClass], ["", T().cWd], ["", T().cDp], ["", T().cNonce], ["", T().cSyms], ["l", T().cWhy]].map(([c, t]) => el("th", { class: c, text: t })))),
+      el("tbody", {}, ...ents.map(e => {
+        const extra = e.members.length - 1;
+        return el("tr", {},
+          el("td", { class: "l nw" }, el("a", { class: "mono", href: EXPLORER + e.entity, target: "_blank", rel: "noopener", text: short(e.entity) }),
+            extra > 0 ? el("span", { class: "small", text: T().linked(extra, e.deposit_addrs.length > 0) }) : null),
+          el("td", { class: "l nw" }, el("span", { class: "chip " + e.class, text: T().cls[e.class] }), e.sub ? el("span", { class: "small", text: T().sub[e.sub] || e.sub }) : null),
+          el("td", { class: "nw" }, String(e.wd_n), el("span", { class: "small", text: usd(e.wd_usd) })),
+          el("td", { class: "nw" }, String(e.dp_n), el("span", { class: "small", text: usd(e.dp_usd) })),
+          el("td", { text: e.nonce.toLocaleString() }), el("td", { text: e.syms.length, title: e.syms.join(", ") }),
+          el("td", { class: "why", text: e.why.map(w => (T().why[w.code] || (() => w.code))(w)).join(LANG === "zh" ? "；" : "; ") }));
+      })))) : el("div", { class: "empty", text: T().noData }));
+
+  const syms = Object.entries(D.by_symbol || {}).map(([s, v]) => [s, v, CLASSES.reduce((a, c) => a + (v[c] || 0), 0)]).sort((a, b) => b[2] - a[2]);
+  $("#symbols").replaceChildren(el("h2", { text: T().symTitle }), el("p", { class: "desc", text: T().symDesc }),
+    syms.length ? el("div", { class: "tablewrap" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", { class: "l", text: T().cSym }), el("th", { text: T().cTotal }), ...CLASSES.map(c => el("th", { text: T().cls[c] })), el("th", { class: "l", text: T().cMix }))),
+      el("tbody", {}, ...syms.map(([s, v, t]) => el("tr", {}, el("td", { class: "l", text: s }), el("td", { text: usd(t) }),
+        ...CLASSES.map(c => el("td", { text: v[c] ? usd(v[c]) : "–" })), el("td", { class: "barcell" }, bar(CLASSES.map(c => [c, pct(v[c] || 0, t)])))))))) : el("div", { class: "empty", text: T().noData }));
+}
+
+async function load() {
+  try {
+    const r = await fetch("data/counterparties.json?t=" + Math.floor(Date.now() / 60000));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    state.data = await r.json(); render();
+  } catch (e) { $("#meta").textContent = T().loadFail + e.message; }
+}
+$("#f-win").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+  for (const x of $("#f-win").querySelectorAll("button")) x.setAttribute("aria-pressed", x === b);
+  state.win = b.dataset.v; render(); });
+$("#f-lang").addEventListener("click", e => { const b = e.target.closest("button"); if (!b || b.dataset.v === LANG) return;
+  LANG = b.dataset.v; try { localStorage.setItem("fluxmon.lang", LANG); } catch (err) {}
+  applyStatic(); render(); });
+applyStatic(); load(); setInterval(load, 5 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
