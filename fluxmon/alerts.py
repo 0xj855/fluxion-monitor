@@ -22,6 +22,9 @@ def evaluate(r, prev, cfg):
                 if p2.get(side) and d2[side] < p2[side] * (1 - a["depth2_drop_pct"] / 100):
                     add(f"depth_drop_{side}", "critical", "depth_drop", side=side,
                         drop=1 - d2[side] / p2[side], before=p2[side], after=d2[side])
+    tvl_min = a.get("tvl_min_usd", {}).get(r["pair"])   # 按交易对的 TVL 下限（美元）
+    if tvl_min and r.get("tvl_usd") is not None and r["tvl_usd"] < tvl_min:
+        add("tvl_min", "critical", "tvl_min", tvl=r["tvl_usd"], min=tvl_min)
     if prev and prev.get("tvl_usd") and r.get("tvl_usd") is not None:
         if r["tvl_usd"] < prev["tvl_usd"] * (1 - a["tvl_drop_pct"] / 100):
             add("tvl_drop", "critical", "tvl_drop", drop=1 - r["tvl_usd"] / prev["tvl_usd"],
@@ -54,6 +57,8 @@ def message_zh(code, p):
         return f"{n} {'上方' if p['side'] == 'up' else '下方'} ±2% 深度骤降 {p['drop']:.0%}：${p['before']:,.0f} → ${p['after']:,.0f}"
     if code == "tvl_drop":
         return f"{n} TVL 下降 {p['drop']:.0%}：${p['before']:,.0f} → ${p['after']:,.0f}"
+    if code == "tvl_min":
+        return f"{n} TVL ${p['tvl']:,.0f}，低于下限 ${p['min']:,.0f}"
     if code == "price_dev":
         return f"{n} 池价偏离参考价 {p['dev']:+.2f}%（池 {p['price']:.4f} vs 参考 {p['ref']:.4f}，来源 {p['source']}）"
     if code == "lp_conc":

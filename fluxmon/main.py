@@ -119,7 +119,8 @@ def notify(cfg, lines):
     hook = os.environ.get(cfg["lark_webhook_env"])
     if not hook or not lines:
         return
-    body = json.dumps({"msg_type": "text", "content": {"text": "【Mantle DEX 流动性监控】\n" + "\n".join(lines)}}).encode()
+    link = f"\n看板：{os.environ['FLUXMON_DASHBOARD_URL']}" if os.environ.get("FLUXMON_DASHBOARD_URL") else ""
+    body = json.dumps({"msg_type": "text", "content": {"text": "【Mantle DEX 流动性监控】\n" + "\n".join(lines) + link}}).encode()
     try:
         urllib.request.urlopen(urllib.request.Request(hook, body, {"content-type": "application/json"}), timeout=15)
     except Exception as e:
@@ -400,16 +401,16 @@ def run(args):
     for key, sev, code, params in designated_alerts(designated, cfg):
         fired[key] = (sev, message_zh(code, params), code, params)
     active = store.active_alerts()
-    new_lines, resolved_lines = [], []   # [(key, 文案)]
+    new_lines, resolved_lines = [], []   # [(key, 文案, 级别)]
     rank = {"info": 0, "warn": 1, "critical": 2}
     for key, (sev, msg, _, _) in fired.items():
         if key not in active or rank.get(sev, 0) > rank.get(active[key][1], 0):   # 新触发，或级别升级
-            new_lines.append((key, f"[{sev.upper()}] {msg}"))
+            new_lines.append((key, f"[{sev.upper()}] {msg}", sev))
         store.set_alert(key, sev, msg, now)
     for key, row in active.items():
         if key not in fired:
             store.resolve_alert(key, now)
-            resolved_lines.append((key, f"[已恢复] {row[2]}"))
+            resolved_lines.append((key, f"[已恢复] {row[2]}", row[1]))
     for r in rows:
         r.pop("_val", None)
     store.save_snapshot(now, head, rows)
@@ -429,9 +430,9 @@ def run(args):
     print(render_console(pub))
     changes = new_lines + resolved_lines
     if changes:
-        print("\n".join(["", "== 告警变化 =="] + [l for k, l in changes if not (public and k.startswith("designated:"))]))
-        if not args.no_notify:
-            notify(cfg, [l for _, l in changes])
+        print("\n".join(["", "== 告警变化 =="] + [l for k, l, _ in changes if not (public and k.startswith("designated:"))]))
+        if not args.no_notify:   # 推送只发 critical 的触发 / 升级 / 恢复，其余看看板
+            notify(cfg, [l for _, l, sev in changes if sev == "critical"])
     if not args.no_notify and mailer.configured():
         ecfg = cfg.get("email", {})
         mailer.critical_alerts(store, fired, now, ecfg)

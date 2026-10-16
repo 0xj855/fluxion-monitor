@@ -259,13 +259,14 @@ const I18N = {
     fSymCols: ["标的", "总供应", "流通量", "Bybit 持有", "30 天提现", "30 天充值"],
     fChart: "每日充提（美元）", fSerWd: "提现到链上", fSerDp: "充值回 Bybit",
     group: {
-      depth_min: n => `${n} 个池子 ±2% 深度低于阈值`, depth_drop: n => `${n} 个池子 ±2% 深度骤降`, tvl_drop: n => `${n} 个池子 TVL 骤降`,
+      depth_min: n => `${n} 个池子 ±2% 深度低于阈值`, depth_drop: n => `${n} 个池子 ±2% 深度骤降`, tvl_drop: n => `${n} 个池子 TVL 骤降`, tvl_min: n => `${n} 个池子 TVL 低于下限`,
       price_dev: n => `${n} 个池子价格偏离参考价`, lp_conc: n => `${n} 个池子由单一 LP 提供大部分流动性`,
       range_edge: n => `${n} 个集中头寸接近区间边界`, large_burn: n => `${n} 个池子出现大额撤出`,
     },
     alert: {
       depth_min: p => `${p.name} ±2% 深度偏薄：上 ${usd(p.up)} / 下 ${usd(p.down)}（阈值 ${usd(p.min)}）`,
       depth_drop: p => `${p.name} ${p.side === "up" ? "上方" : "下方"} ±2% 深度骤降 ${(p.drop * 100).toFixed(0)}%：${usd(p.before)} → ${usd(p.after)}`,
+      tvl_min: p => `${p.name} TVL ${usd(p.tvl)}，低于下限 ${usd(p.min)}`,
       tvl_drop: p => `${p.name} TVL 下降 ${(p.drop * 100).toFixed(0)}%：${usd(p.before)} → ${usd(p.after)}`,
       price_dev: p => `${p.name} 池价偏离参考价 ${pct(p.dev, 2, true)}（池 ${price(p.price)} vs 参考 ${price(p.ref)}，来源 ${p.source}）`,
       lp_conc: p => `${p.name} 单一 LP 占在区间流动性 ${pct(p.share, 1)}（${short(p.owner)}），撤资即失去深度`,
@@ -335,13 +336,14 @@ const I18N = {
     fSymCols: ["Asset", "Supply", "Circulating", "Bybit", "30d withdrawals", "30d deposits"],
     fChart: "Daily flows (USD)", fSerWd: "Withdrawn on-chain", fSerDp: "Deposited to Bybit",
     group: {
-      depth_min: n => `${n} pools have ±2% depth below threshold`, depth_drop: n => `${n} pools saw ±2% depth drop sharply`, tvl_drop: n => `${n} pools saw TVL drop sharply`,
+      depth_min: n => `${n} pools have ±2% depth below threshold`, depth_drop: n => `${n} pools saw ±2% depth drop sharply`, tvl_drop: n => `${n} pools saw TVL drop sharply`, tvl_min: n => `${n} pools have TVL below the minimum`,
       price_dev: n => `${n} pools deviate from reference price`, lp_conc: n => `${n} pools rely on a single LP for most liquidity`,
       range_edge: n => `${n} concentrated positions are near their range bound`, large_burn: n => `${n} pools had large withdrawals`,
     },
     alert: {
       depth_min: p => `${p.name} ±2% depth is thin: up ${usd(p.up)} / down ${usd(p.down)} (threshold ${usd(p.min)})`,
       depth_drop: p => `${p.name} ${p.side === "up" ? "upside" : "downside"} ±2% depth fell ${(p.drop * 100).toFixed(0)}%: ${usd(p.before)} → ${usd(p.after)}`,
+      tvl_min: p => `${p.name} TVL ${usd(p.tvl)} is below the minimum ${usd(p.min)}`,
       tvl_drop: p => `${p.name} TVL fell ${(p.drop * 100).toFixed(0)}%: ${usd(p.before)} → ${usd(p.after)}`,
       price_dev: p => `${p.name} pool price deviates ${pct(p.dev, 2, true)} from reference (pool ${price(p.price)} vs ref ${price(p.ref)}, source ${p.source})`,
       lp_conc: p => `${p.name} a single LP holds ${pct(p.share, 1)} of in-range liquidity (${short(p.owner)}); depth disappears if it withdraws`,

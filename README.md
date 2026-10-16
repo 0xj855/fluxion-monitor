@@ -48,11 +48,13 @@ FLUXMON_LARK_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxx ./run.sh  
 |---|---|---|
 | ±2% 深度低于下限 | WETH $50k / xStocks $2k | warn |
 | ±2% 深度较 1 小时前下降 | > 30% | critical |
+| TVL 低于下限（按交易对，`alerts.tvl_min_usd`） | WETH/USDT0 $5M | critical |
 | TVL 较 1 小时前下降 | > 20% | critical |
 | 池价偏离参考价 | WETH 1% / xStocks 1.5%（3 倍以上为 critical） | warn |
 | 单一 LP 占比 | > 50% | info |
 | 占比 ≥ 20% 的集中头寸距区间边界 | < 3% | critical |
 | 24h 单笔 Burn | ≥ TVL 的 10% | critical |
+| 承诺方在 10 个指定池子的资金（美元）低于承诺额 | 私有配置 `designated.commitment_usd` | critical |
 
 ## 产物
 
@@ -85,10 +87,10 @@ xStocks 地址清单来自 `https://api.backed.fi/api/v1/token`（Mantle deploym
 - 看板支持中文 / English（右上角切换，或 `?lang=en`）。
 - 看板读取 `data/latest.json`（当前快照，含 ±30% 流动性分布、累积深度曲线、LP 头寸）和 `data/history.json`（30 天时间序列）。
 - SQLite 状态通过 Actions cache 续接；缓存丢失时用 `config/pools_seed.json` 跳过池子全量扫描，并从线上 `history.json` 续接历史。
-- 飞书推送：在仓库 Settings → Secrets → Actions 添加 `FLUXMON_LARK_WEBHOOK`（自定义机器人 webhook 地址）。
+- 飞书推送：在仓库 Settings → Secrets → Actions 添加 `FLUXMON_LARK_WEBHOOK`（自定义机器人 webhook 地址）。只推 critical 的触发 / 升级 / 恢复，附看板链接。
 - 邮件通知（[Resend](https://resend.com)，免费额度每天 100 封）：添加 Secrets `FLUXMON_RESEND_API_KEY`、`FLUXMON_EMAIL_TO`（逗号分隔）。可选 `FLUXMON_EMAIL_FROM`，默认 `onboarding@resend.dev`，此时只能发到 Resend 注册邮箱；要发给其他人需先在 Resend 验证发信域名，再把 FROM 设为该域名下的地址。
   - **只发 critical**：同一告警 key 只发一次；持续存在、或消失不足 24h（`email.critical_quiet_s`）又重新触发都不会重复发；恢复不单独发邮件。同一轮的多条新告警合并成一封。
-  - **每日日报**：每天 UTC `email.daily_hour_utc` 点（默认 1 点 = 北京时间 9 点）之后的第一轮发送一封，含当前告警、过去 24h 已恢复告警、TVL 前 20 池子、RFQ 与 xStocks 充提概况。`--daily-now` 可立即发送一封测试。
+  - **每日日报**：每天 UTC `email.daily_hour_utc` 点（默认 1 点 = 北京时间 9 点）之后的第一轮发送一封，只含当前 critical 与过去 24h 已恢复的 critical，其余指标看看板链接。`--daily-now` 可立即发送一封测试。
   - 去重状态存在 SQLite 里；Actions cache 丢失时可能重发一次当前仍在的 critical。
   - **运行失败提醒**：workflow 失败时发一封 `[FAILED]` 邮件（附运行链接），6 小时内不重复。
 

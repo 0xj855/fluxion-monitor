@@ -137,6 +137,9 @@
     "depth2_drop_pct": 30,
     "depth_drop_lookback_s": 3600,
     "tvl_drop_pct": 20,
+    "tvl_min_usd": {
+      "WETH/USDT0": 5000000
+    },
     "price_dev_pct": {
       "weth": 1.0,
       "xstock": 1.5
@@ -149,8 +152,7 @@
   "lark_webhook_env": "FLUXMON_LARK_WEBHOOK",
   "email": {
     "critical_quiet_s": 86400,
-    "daily_hour_utc": 1,
-    "daily_max_pools": 20
+    "daily_hour_utc": 1
   },
   "designated": {
     "pairs": [

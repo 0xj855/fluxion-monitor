@@ -66,7 +66,8 @@ def critical_alerts(store, fired, now, cfg):
         subject = f"[CRITICAL] {SUBJECT}：{len(new)} 条新告警"
         body = f"<p>{ts}</p><ul>" + "".join(f"<li>{html.escape(m)}</li>" for _, m in new) + "</ul>"
         try:
-            send(subject, _page(subject, body), f"{ts}\n" + "\n".join(f"- {m}" for _, m in new))
+            link = f"\n看板：{os.environ['FLUXMON_DASHBOARD_URL']}" if os.environ.get("FLUXMON_DASHBOARD_URL") else ""
+            send(subject, _page(subject, body), f"{ts}\n" + "\n".join(f"- {m}" for _, m in new) + link)
             sent = True
             print(f"critical email sent: {len(new)}")
         except Exception as e:
@@ -90,44 +91,23 @@ def daily_due(store, now, cfg):
 
 
 def daily_report(store, rep, now, cfg):
+    """日报只含 critical：当前仍在的 + 过去 24h 已恢复的；其余指标看看板。"""
     day = time.strftime("%Y-%m-%d", time.gmtime(now))
-    fmt = lambda v, f="${:,.0f}": "-" if v is None else f.format(v)
-    sev_rank = {"critical": 0, "warn": 1, "info": 2}
+    active = [a for a in rep["alerts"] if a["severity"] == "critical"]
+    resolved = [r for r in store.alerts_since(now - 86400) if not r["active"] and r["severity"] == "critical"]
 
-    active = sorted(rep["alerts"], key=lambda a: sev_rank.get(a["severity"], 9))
-    n = {s: sum(1 for a in active if a["severity"] == s) for s in sev_rank}
-    recent = store.alerts_since(now - 86400)
-    resolved = [r for r in recent if not r["active"]]
-    crit_24h = [r for r in recent if r["severity"] == "critical"]
-
-    parts = [f"<p>{day}，区块 {rep['block']}。当前告警：critical {n['critical']} / warn {n['warn']} / info {n['info']}；"
-             f"过去 24h 出现 critical {len(crit_24h)} 条，已恢复 {len(resolved)} 条。</p>"]
-    text = [f"{day} 当前告警 critical {n['critical']} / warn {n['warn']} / info {n['info']}；24h critical {len(crit_24h)}，已恢复 {len(resolved)}"]
+    parts = [f"<p>{day}：当前 critical {len(active)} 条，过去 24h 已恢复 {len(resolved)} 条。</p>"]
+    text = [f"{day} 当前 critical {len(active)} 条，过去 24h 已恢复 {len(resolved)} 条"]
     if active:
-        parts.append("<h3>当前告警</h3>" + _table(["级别", "内容"], [(a["severity"], a["message"]) for a in active]))
-        text += [f"[{a['severity']}] {a['message']}" for a in active]
+        parts.append("<h3>当前 critical</h3><ul>" + "".join(f"<li>{html.escape(a['message'])}</li>" for a in active) + "</ul>")
+        text += [f"- {a['message']}" for a in active]
     if resolved:
-        parts.append("<h3>过去 24h 已恢复</h3>" + _table(["级别", "内容"], [(r["severity"], r["message"]) for r in resolved]))
+        parts.append("<h3>过去 24h 已恢复</h3><ul>" + "".join(f"<li>{html.escape(r['message'])}</li>" for r in resolved) + "</ul>")
+        text += [f"- [已恢复] {r['message']}" for r in resolved]
+    if os.environ.get("FLUXMON_DASHBOARD_URL"):
+        text.append(f"看板：{os.environ['FLUXMON_DASHBOARD_URL']}")
 
-    pools = sorted(rep["pools"], key=lambda r: -(r.get("tvl_usd") or 0))[:cfg.get("daily_max_pools", 20)]
-    parts.append("<h3>池子（按 TVL）</h3>" + _table(
-        ["DEX", "池子", "TVL", "±2% 上", "±2% 下", "24h 成交", "偏离参考价"],
-        [(r.get("dex_name", ""), f"{r['pair']} ({r['fee_pct']}%)", fmt(r.get("tvl_usd")),
-          fmt((r["depth"].get("2") or {}).get("up")), fmt((r["depth"].get("2") or {}).get("down")),
-          fmt((r.get("events_24h") or {}).get("swap_usd", 0)), fmt(r.get("price_dev_pct"), "{:+.2f}%")) for r in pools]))
-
-    rfq = rep.get("rfq")
-    if rfq:
-        sm = rfq["summary"]
-        parts.append(f"<h3>Fluxion RFQ</h3><p>在线 {sm['active']}/{sm['total']}，SLA 达标 {sm.get('sla_pass_count', 0)}/{sm['total']}，"
-                     f"平均买卖价差 {fmt(sm.get('avg_spread_bps'), '{:.1f} bps')}</p>")
-    fl = rep.get("flows")
-    if fl:
-        t, w = fl["totals"], fl["windows"].get("24h") or {}
-        parts.append(f"<h3>xStocks 流通与 Bybit 充提</h3><p>流通 {fmt(t['circulating_usd'])}（交易所 {fmt(t['exchange_usd'])}）；"
-                     f"24h 提现 {fmt(w.get('wd_usd'))} / 充值 {fmt(w.get('dp_usd'))} / 净流入链上 {fmt(w.get('net_usd'), '${:+,.0f}')}</p>")
-
-    subject = f"{SUBJECT} 日报 {day}" + (f"（{n['critical']} 条 critical）" if n["critical"] else "")
+    subject = f"{SUBJECT} 日报 {day}" + (f"（{len(active)} 条 critical）" if active else "（无 critical）")
     try:
         send(subject, _page(subject, "".join(parts)), "\n".join(text))
         store.put("email_daily_last", day)
