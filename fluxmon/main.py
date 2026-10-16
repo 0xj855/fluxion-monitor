@@ -9,7 +9,7 @@ from pathlib import Path
 from . import chain
 from .alerts import evaluate, message_zh
 from . import lb
-from . import counterparty, flows, mailer, venue
+from . import counterparty, flows, mailer, sla, venue
 from .analyze import analyze_pool, lp_concentration, lp_from_holders, lp_holders, orient
 from .chain import BLOCKS_PER_DAY, decode_string, multicall
 from .discover import sweep_pools, sync_events, sync_pools, sync_positions
@@ -376,6 +376,7 @@ def run(args):
             except Exception as e:
                 print("venue compare failed:", e)
         store.save_rfq_snapshot(now, {it["symbol"]: venue.history_row(it, session_info["session"]) for it in rfq_items})
+        sla.record(store, rfq_items, session_info, now)
 
     # ---- xStocks 流通量与交易所充提
     flow_data = cp_data = None
@@ -434,6 +435,13 @@ def run(args):
     (out_dir / "latest.json").write_text(json.dumps(clean(pub), indent=1, ensure_ascii=False))
     (out_dir / "latest.md").write_text(render_md(pub))
     (out_dir / "counterparties.json").write_text(json.dumps(clean(cp_data or {"ts": now, "error": "flows disabled"}), indent=1, ensure_ascii=False))
+    try:   # SLA 记录：追加到长期 CSV（CI 中为 sla-data 分支）并汇总
+        sla_dir = Path(os.environ.get("FLUXMON_SLA_DIR") or ROOT / "data" / "sla")
+        print("sla rows appended:", sla.export(store, sla_dir))
+        (out_dir / "sla.json").write_text(json.dumps(clean(sla.summarize(sla_dir, now)), separators=(",", ":")))
+    except Exception as e:
+        print("sla export failed:", repr(e))
+        (out_dir / "sla.json").write_text(json.dumps({"ts": now, "error": "sla summary failed"}))
     (out_dir / "history.json").write_text(json.dumps(clean(store.export_history()), separators=(",", ":")))
     print(render_console(pub))
     changes = new_lines + resolved_lines

@@ -8,7 +8,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write     # SLA 记录提交到 sla-data 分支
   pages: write
   id-token: write
 
@@ -44,6 +44,15 @@ jobs:
           key: fluxmon-db-${{ github.run_id }}
           restore-keys: fluxmon-db-
 
+      # SLA 长期记录：sla-data 分支（只放月度 CSV 与已结束月份的汇总），以 worktree 挂在 sla-data/
+      - name: Checkout SLA data
+        run: |
+          if git fetch --depth=1 origin sla-data; then
+            git worktree add sla-data FETCH_HEAD
+          else
+            git worktree add --orphan -b sla-data sla-data
+          fi
+
       - name: Run monitor
         env:
           FLUXMON_LARK_WEBHOOK: ${{ secrets.FLUXMON_LARK_WEBHOOK }}
@@ -52,6 +61,7 @@ jobs:
           # 线上看板以这里为准：历史序列在缓存丢失时从 <站点>/data/history.json 续接
           FLUXMON_HISTORY_URL: ${{ env.FLUXMON_DASHBOARD_URL }}data/history.json
           FLUXMON_PUBLIC: "1"     # 产物会公开发布：报告里剥掉 LP 标签、合同承诺等私有字段
+          FLUXMON_SLA_DIR: sla-data
         run: python -m fluxmon.main
 
       # 监控本身失败时发邮件（6 小时内只发一封）；必须在 cache save 之前，冷却时间才能存进数据库
@@ -59,6 +69,19 @@ jobs:
         if: failure()
         run: |
           python -m fluxmon.mailer failed "workflow run failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # 每小时提交一次（未提交的样本留在数据库缓冲里，下次一起追加）；跨日时立即提交
+      - name: Commit SLA data
+        if: always()
+        run: |
+          cd sla-data
+          git add -A
+          git diff --cached --quiet && exit 0
+          last=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+          lastday=$(git log -1 --format=%cd --date=format-local:%Y-%m-%d 2>/dev/null || echo none)
+          if [ $(( $(date +%s) - last )) -lt 3600 ] && [ "$lastday" = "$(TZ=UTC date +%Y-%m-%d)" ]; then exit 0; fi
+          git -c user.name="mantle-liquidity-monitor" -c user.email="actions@users.noreply.github.com" commit -q -m "SLA samples $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push origin HEAD:sla-data
 
       - uses: actions/cache/save@v4
         if: always()
@@ -69,8 +92,9 @@ jobs:
       - name: Build site
         run: |
           mkdir -p _site/data
-          cp site/index.html site/flows.html _site/
-          cp data/reports/latest.json data/reports/history.json data/reports/latest.md data/reports/counterparties.json _site/data/
+          cp site/index.html site/flows.html site/sla.html _site/
+          cp data/reports/latest.json data/reports/history.json data/reports/latest.md data/reports/counterparties.json data/reports/sla.json _site/data/
+          mkdir -p _site/data/sla && cp sla-data/rfq/*.csv _site/data/sla/ 2>/dev/null || true   # 首次运行前还没有 CSV
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
